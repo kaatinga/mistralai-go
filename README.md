@@ -120,7 +120,7 @@ if err = resp.JSON(&out); err != nil {
 }
 ```
 
-For `json_schema`, set `ResponseFormat` on `ChatRequest` or `ChatCompletionRequest` (see `BuildingDocumentJSONSchema()` in `extraction.go` for OCR document annotation).
+For `json_schema`, set `ResponseFormat` on `ChatRequest`, `ChatCompletionRequest`, or `OCRRequest.DocumentAnnotationFormat`. Unmarshal OCR output with `OCRStructured[T]` or `OCRResponse.DocumentAnnotationInto[T]()`.
 
 ## Testing
 

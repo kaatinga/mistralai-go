@@ -55,7 +55,7 @@ type OCRRequest struct {
 	// ID is an optional client-side correlation id forwarded to the API.
 	ID string
 	// DocumentAnnotationPrompt guides structured extraction for the whole document.
-	// DocumentAnnotationFormat must be set when using a prompt (use BuildingDocumentJSONSchema).
+	// DocumentAnnotationFormat must be set when using a prompt.
 	DocumentAnnotationPrompt string
 	DocumentAnnotationFormat *ResponseFormat
 }
