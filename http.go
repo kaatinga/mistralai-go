@@ -11,7 +11,113 @@ import (
 	"net/textproto"
 	"path"
 	"strings"
+	"time"
 )
+
+const (
+	defaultMaxRetries = 5
+	retryInitialDelay = time.Second
+)
+
+func isRetryStatusCode(code int) bool {
+	return code == http.StatusTooManyRequests ||
+		code == http.StatusInternalServerError ||
+		code == http.StatusBadGateway ||
+		code == http.StatusServiceUnavailable ||
+		code == http.StatusGatewayTimeout
+}
+
+func (c *client) doJSON(ctx context.Context, method, endpoint string, payload, dest any) error {
+	var bodyReader io.Reader
+	if payload != nil {
+		bts, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		bodyReader = bytes.NewReader(bts)
+	}
+
+	url := c.baseURL + path.Clean("/"+endpoint)
+	delay := retryInitialDelay
+	var lastErr error
+
+	for attempt := 0; attempt < c.maxRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+			delay *= 2
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+		if err != nil {
+			return err
+		}
+		if payload != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		req.Header.Set("Authorization", bearerToken(c.apiKey))
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			lastErr = err
+			if payload != nil {
+				if bts, mErr := json.Marshal(payload); mErr == nil {
+					bodyReader = bytes.NewReader(bts)
+				}
+			}
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			if payload != nil {
+				if bts, mErr := json.Marshal(payload); mErr == nil {
+					bodyReader = bytes.NewReader(bts)
+				}
+			}
+			continue
+		}
+
+		if isRetryStatusCode(resp.StatusCode) {
+			lastErr = apiError(resp.StatusCode, body)
+			if payload != nil {
+				if bts, mErr := json.Marshal(payload); mErr == nil {
+					bodyReader = bytes.NewReader(bts)
+				}
+			}
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return apiError(resp.StatusCode, body)
+		}
+		if dest == nil {
+			return nil
+		}
+		if err = json.Unmarshal(body, dest); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
+		return nil
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("mistral: request retries exhausted")
+	}
+	return lastErr
+}
+
+func (c *client) postJSON(ctx context.Context, endpoint string, payload, dest any) error {
+	return c.doJSON(ctx, http.MethodPost, endpoint, payload, dest)
+}
+
+func (c *client) getJSON(ctx context.Context, endpoint string, dest any) error {
+	return c.doJSON(ctx, http.MethodGet, endpoint, nil, dest)
+}
 
 func (c *client) uploadFile(ctx context.Context, filename string, content io.Reader, contentType string) (string, error) {
 	var buf bytes.Buffer
@@ -68,42 +174,6 @@ func (c *client) uploadFile(ctx context.Context, filename string, content io.Rea
 		return "", fmt.Errorf("upload response missing file id")
 	}
 	return uploaded.ID, nil
-}
-
-func (c *client) postJSON(ctx context.Context, endpoint string, payload, dest any) error {
-	bts, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	url := c.baseURL + path.Clean("/"+endpoint)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bts))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", bearerToken(c.apiKey))
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return apiError(resp.StatusCode, body)
-	}
-	if dest == nil {
-		return nil
-	}
-	if err = json.Unmarshal(body, dest); err != nil {
-		return fmt.Errorf("decode response: %w", err)
-	}
-	return nil
 }
 
 func bearerToken(apiKey string) string {

@@ -138,7 +138,7 @@ func TestChat_textMarkdownJSON(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		var body chatCompletionRequest
+		var body ChatCompletionRequest
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
@@ -173,15 +173,11 @@ func TestChat_textMarkdownJSON(t *testing.T) {
 			t.Fatalf("unexpected input %q", body.Messages[len(body.Messages)-1].Content)
 		}
 
-		_ = json.NewEncoder(w).Encode(chatCompletionResponse{
+		_ = json.NewEncoder(w).Encode(ChatCompletionResponse{
 			Model: "mistral-small-latest",
-			Choices: []struct {
-				Message struct {
-					Content string `json:"content"`
-				} `json:"message"`
-			}{{Message: struct {
-				Content string `json:"content"`
-			}{Content: content}}},
+			Choices: []ChatCompletionResponseChoice{{
+				Message: ChatMessage{Role: "assistant", Content: content},
+			}},
 		})
 	}))
 	defer srv.Close()
@@ -224,6 +220,125 @@ func TestChat_requiresInput(t *testing.T) {
 	_, err = cl.Chat(context.Background(), ChatRequest{})
 	if err == nil || !strings.Contains(err.Error(), "input is required") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestChatCompletion_multiMessageAndTemperature(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		var body ChatCompletionRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Model != "mistral-large-latest" {
+			t.Errorf("model = %q", body.Model)
+		}
+		if body.Temperature != 0.7 {
+			t.Errorf("temperature = %v", body.Temperature)
+		}
+		if body.Stream {
+			t.Error("stream should be false")
+		}
+		if len(body.Messages) != 2 {
+			t.Fatalf("messages = %+v", body.Messages)
+		}
+		_ = json.NewEncoder(w).Encode(ChatCompletionResponse{
+			Model: body.Model,
+			Choices: []ChatCompletionResponseChoice{{
+				Message: ChatMessage{Role: "assistant", Content: "done"},
+			}},
+		})
+	}))
+	defer srv.Close()
+
+	cl, err := NewClient("test-key", WithBaseURL(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+
+	resp, err := cl.ChatCompletion(context.Background(), ChatCompletionRequest{
+		Model: "mistral-large-latest",
+		Messages: []ChatMessage{
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "hi"},
+		},
+		Temperature: 0.7,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resp.AllChoicesContent(); got != "done" {
+		t.Fatalf("content = %q", got)
+	}
+}
+
+func TestListModels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" || r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(ModelList{
+			Object: "list",
+			Data: []ModelCard{
+				{ID: "mistral-small-latest", Object: "model"},
+				{ID: "mistral-embed", Object: "model"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	cl, err := NewClient("test-key", WithBaseURL(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+
+	list, err := cl.ListModels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Data) != 2 || list.Data[0].ID != "mistral-small-latest" {
+		t.Fatalf("list = %+v", list)
+	}
+}
+
+func TestDoJSON_retriesOn429(t *testing.T) {
+	var attempts int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		attempts++
+		if attempts < 2 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"message":"rate limit"}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(ModelList{Object: "list", Data: []ModelCard{{ID: "ok"}}})
+	}))
+	defer srv.Close()
+
+	cl, err := NewClient("k", WithBaseURL(srv.URL), WithMaxRetries(3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+
+	list, err := cl.ListModels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d want 2", attempts)
+	}
+	if len(list.Data) != 1 || list.Data[0].ID != "ok" {
+		t.Fatalf("list = %+v", list)
 	}
 }
 

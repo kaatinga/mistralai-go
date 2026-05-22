@@ -96,32 +96,35 @@ func (c *client) processChat(ctx context.Context, req ChatRequest) (*ChatRespons
 		return nil, err
 	}
 
-	messages := make([]chatMessage, 0, 2)
+	messages := make([]ChatMessage, 0, 2)
 	if system != "" {
-		messages = append(messages, chatMessage{Role: "system", Content: system})
+		messages = append(messages, ChatMessage{Role: "system", Content: system})
 	}
-	messages = append(messages, chatMessage{Role: "user", Content: req.Input})
+	messages = append(messages, ChatMessage{Role: "user", Content: req.Input})
 
-	body := chatCompletionRequest{
+	resp, err := c.ChatCompletion(ctx, ChatCompletionRequest{
 		Model:          model,
 		Messages:       messages,
 		ResponseFormat: responseFormat,
-	}
-
-	var resp chatCompletionResponse
-	if err = c.postJSON(ctx, "/v1/chat/completions", body, &resp); err != nil {
-		return nil, fmt.Errorf("mistral: chat: %w", err)
-	}
-
-	content, err := resp.assistantContent()
+	})
 	if err != nil {
 		return nil, err
+	}
+
+	content, err := resp.FirstChoiceContent()
+	if err != nil {
+		return nil, err
+	}
+
+	outModel := model
+	if resp.Model != "" {
+		outModel = resp.Model
 	}
 
 	return &ChatResponse{
 		Content: content,
 		Format:  format,
-		Model:   resp.modelName(model),
+		Model:   outModel,
 	}, nil
 }
 

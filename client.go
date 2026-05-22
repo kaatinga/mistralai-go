@@ -23,8 +23,12 @@ const (
 type Client interface {
 	// OCR uploads the document via POST /v1/files, then POST /v1/ocr; blocks until 200 or error.
 	OCR(ctx context.Context, req OCRRequest) (OCRResponse, error)
-	// Chat runs POST /v1/chat/completions; blocks until 200 or error.
+	// Chat runs POST /v1/chat/completions with a single user turn; blocks until 200 or error.
 	Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
+	// ChatCompletion runs POST /v1/chat/completions with full message control.
+	ChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error)
+	// ListModels returns models available to the API key (GET /v1/models).
+	ListModels(ctx context.Context) (ModelList, error)
 	// Close releases resources. Safe to call more than once.
 	Close() error
 }
@@ -62,6 +66,7 @@ type ClientOption func(*clientOptions)
 type clientOptions struct {
 	baseURL    string
 	httpClient *http.Client
+	maxRetries int
 }
 
 // WithBaseURL overrides DefaultBaseURL (for tests).
@@ -74,10 +79,16 @@ func WithHTTPClient(httpClient *http.Client) ClientOption {
 	return func(o *clientOptions) { o.httpClient = httpClient }
 }
 
+// WithMaxRetries sets retry attempts for retryable HTTP status codes (default 5).
+func WithMaxRetries(n int) ClientOption {
+	return func(o *clientOptions) { o.maxRetries = n }
+}
+
 type client struct {
-	apiKey  string
-	baseURL string
-	http    *http.Client
+	apiKey     string
+	baseURL    string
+	http       *http.Client
+	maxRetries int
 }
 
 // NewClient returns a synchronous HTTP client for the Mistral API.
@@ -99,11 +110,16 @@ func NewClient(apiKey string, opts ...ClientOption) (Client, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 10 * time.Minute}
 	}
+	maxRetries := o.maxRetries
+	if maxRetries <= 0 {
+		maxRetries = defaultMaxRetries
+	}
 
 	return &client{
-		apiKey:  apiKey,
-		baseURL: baseURL,
-		http:    httpClient,
+		apiKey:     apiKey,
+		baseURL:    baseURL,
+		http:       httpClient,
+		maxRetries: maxRetries,
 	}, nil
 }
 

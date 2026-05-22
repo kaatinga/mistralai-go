@@ -1,10 +1,5 @@
 package mistralai
 
-import (
-	"errors"
-	"strings"
-)
-
 // API DTOs aligned with https://github.com/mistralai/platform-docs-public OpenAPI.
 
 type uploadFileResponse struct {
@@ -52,44 +47,6 @@ type apiErrorResponse struct {
 	Message string `json:"message"`
 	Type    string `json:"type"`
 	Code    any    `json:"code"`
-}
-
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type chatCompletionRequest struct {
-	Model          string          `json:"model"`
-	Messages       []chatMessage   `json:"messages"`
-	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
-}
-
-type chatCompletionResponse struct {
-	Model   string `json:"model"`
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
-}
-
-func (r chatCompletionResponse) assistantContent() (string, error) {
-	if len(r.Choices) == 0 {
-		return "", errors.New("mistral: chat response has no choices")
-	}
-	content := strings.TrimSpace(r.Choices[0].Message.Content)
-	if content == "" {
-		return "", errors.New("mistral: chat response has empty content")
-	}
-	return content, nil
-}
-
-func (r chatCompletionResponse) modelName(fallback string) string {
-	if r.Model != "" {
-		return r.Model
-	}
-	return fallback
 }
 
 // OCRPage is one page from a Mistral OCR response.
