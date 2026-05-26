@@ -39,3 +39,18 @@ func OCRStructured[T any](ctx context.Context, c Client, req OCRRequest) (T, OCR
 	out, err := DocumentAnnotationInto[T](resp)
 	return out, resp, err
 }
+
+// ChatStructured runs ChatCompletion and unmarshals the first choice content into T.
+func ChatStructured[T any](ctx context.Context, c Client, req ChatCompletionRequest) (T, ChatCompletionResponse, error) {
+	var zero T
+	resp, err := c.ChatCompletion(ctx, req)
+	if err != nil {
+		return zero, resp, err
+	}
+	content, err := resp.FirstChoiceContent()
+	if err != nil {
+		return zero, resp, err
+	}
+	out, err := ParseJSON[T](content)
+	return out, resp, err
+}

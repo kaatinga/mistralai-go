@@ -45,6 +45,40 @@ func TestDocumentAnnotationInto(t *testing.T) {
 	}
 }
 
+func TestChatStructured(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ChatCompletionResponse{
+			Choices: []ChatCompletionResponseChoice{{
+				Message: ChatMessage{Role: "assistant", Content: `{"count":7}`},
+			}},
+		})
+	}))
+	defer srv.Close()
+
+	cl, err := NewClient("key", WithBaseURL(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type result struct {
+		Count int `json:"count"`
+	}
+	got, resp, err := ChatStructured[result](context.Background(), cl, ChatCompletionRequest{
+		Model:    "mistral-small-latest",
+		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Count != 7 {
+		t.Fatalf("got count=%d", got.Count)
+	}
+	if len(resp.Choices) != 1 {
+		t.Fatalf("choices=%d", len(resp.Choices))
+	}
+}
+
 func TestOCRStructured(t *testing.T) {
 	const annotation = `{"ok":true}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
