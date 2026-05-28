@@ -9,8 +9,13 @@ import (
 )
 
 const (
+	ChatModelMistralSmallLatest  = "mistral-small-latest"
+	ChatModelMistralMediumLatest = "mistral-medium-latest"
+	ChatModelPixtral12BLatest    = "pixtral-12b-latest"
+	ChatModelPixtralLargeLatest  = "pixtral-large-latest"
+
 	// DefaultChatModel is used when ChatRequest.Model is empty.
-	DefaultChatModel   = "mistral-small-latest"
+	DefaultChatModel   = ChatModelMistralSmallLatest
 	markdownSystemHint = "Format your entire reply as Markdown."
 	jsonSystemHint     = "Reply with a single valid JSON value only. Do not wrap it in markdown fences or add commentary."
 )
