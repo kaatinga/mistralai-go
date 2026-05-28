@@ -119,11 +119,11 @@ func (c *client) getJSON(ctx context.Context, endpoint string, dest any) error {
 	return c.doJSON(ctx, http.MethodGet, endpoint, nil, dest)
 }
 
-func (c *client) uploadFile(ctx context.Context, filename string, content io.Reader, contentType string) (string, error) {
+func (c *client) uploadFile(ctx context.Context, filename string, content io.Reader, contentType, purpose string) (string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 
-	if err := w.WriteField("purpose", filePurposeOCR); err != nil {
+	if err := w.WriteField("purpose", purpose); err != nil {
 		return "", err
 	}
 

@@ -29,6 +29,8 @@ type Client interface {
 	ChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error)
 	// ListModels returns models available to the API key (GET /v1/models).
 	ListModels(ctx context.Context) (ModelList, error)
+	// UploadFile uploads file bytes and returns the API file id.
+	UploadFile(ctx context.Context, req UploadFileRequest) (string, error)
 	// Close releases resources. Safe to call more than once.
 	Close() error
 }
@@ -58,6 +60,14 @@ type OCRRequest struct {
 	// DocumentAnnotationFormat must be set when using a prompt.
 	DocumentAnnotationPrompt string
 	DocumentAnnotationFormat *ResponseFormat
+}
+
+// UploadFileRequest uploads a file to Mistral files API.
+type UploadFileRequest struct {
+	Filename    string
+	Content     io.Reader
+	ContentType string
+	Purpose     string
 }
 
 // ClientOption configures optional NewClient settings. API key is always required separately.
@@ -138,6 +148,20 @@ func (c *client) OCR(ctx context.Context, req OCRRequest) (OCRResponse, error) {
 	return *resp, nil
 }
 
+func (c *client) UploadFile(ctx context.Context, req UploadFileRequest) (string, error) {
+	if strings.TrimSpace(req.Filename) == "" {
+		return "", errors.New("mistral: filename is required")
+	}
+	if req.Content == nil {
+		return "", errors.New("mistral: content is required")
+	}
+	purpose := strings.TrimSpace(req.Purpose)
+	if purpose == "" {
+		purpose = filePurposeOCR
+	}
+	return c.uploadFile(ctx, req.Filename, req.Content, req.ContentType, purpose)
+}
+
 func (r OCRRequest) validate() error {
 	if r.Filename == "" {
 		return errors.New("mistral: filename is required")
@@ -149,7 +173,7 @@ func (r OCRRequest) validate() error {
 }
 
 func (c *client) processOCR(ctx context.Context, req OCRRequest) (*OCRResponse, error) {
-	fileID, err := c.uploadFile(ctx, req.Filename, req.Content, req.ContentType)
+	fileID, err := c.uploadFile(ctx, req.Filename, req.Content, req.ContentType, filePurposeOCR)
 	if err != nil {
 		return nil, fmt.Errorf("mistral: upload file: %w", err)
 	}

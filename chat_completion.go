@@ -2,6 +2,7 @@ package mistralai
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -9,7 +10,7 @@ import (
 // ChatMessage is one message in a chat completion request or response.
 type ChatMessage struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
 }
 
 // ChatCompletionRequest is the body for POST /v1/chat/completions.
@@ -49,7 +50,15 @@ type ChatCompletionResponse struct {
 func (r ChatCompletionResponse) AllChoicesContent() string {
 	var b strings.Builder
 	for _, c := range r.Choices {
-		b.WriteString(c.Message.Content)
+		if s, ok := c.Message.Content.(string); ok {
+			b.WriteString(s)
+			continue
+		}
+		encoded, err := json.Marshal(c.Message.Content)
+		if err != nil {
+			continue
+		}
+		b.Write(encoded)
 	}
 	return b.String()
 }
@@ -59,7 +68,16 @@ func (r ChatCompletionResponse) FirstChoiceContent() (string, error) {
 	if len(r.Choices) == 0 {
 		return "", fmt.Errorf("mistral: chat response has no choices")
 	}
-	content := strings.TrimSpace(r.Choices[0].Message.Content)
+	raw := r.Choices[0].Message.Content
+	content, ok := raw.(string)
+	if !ok {
+		encoded, err := json.Marshal(raw)
+		if err != nil {
+			return "", fmt.Errorf("mistral: chat response has unsupported content type")
+		}
+		content = string(encoded)
+	}
+	content = strings.TrimSpace(content)
 	if content == "" {
 		return "", fmt.Errorf("mistral: chat response has empty content")
 	}
