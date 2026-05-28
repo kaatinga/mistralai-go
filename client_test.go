@@ -160,8 +160,9 @@ func TestChat_textMarkdownJSON(t *testing.T) {
 			if body.ResponseFormat != nil {
 				t.Fatalf("markdown: response_format = %+v", body.ResponseFormat)
 			}
-			if !strings.Contains(body.Messages[0].Content, "Markdown") {
-				t.Errorf("system = %q", body.Messages[0].Content)
+			sysContent, _ := body.Messages[0].Content.(string)
+			if !strings.Contains(sysContent, "Markdown") {
+				t.Errorf("system = %q", sysContent)
 			}
 			content = "# Title"
 		case "json":
