@@ -7,10 +7,58 @@ import (
 	"strings"
 )
 
+// Chat message role values for ChatMessage.Role.
+const (
+	RoleSystem    = "system"
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+)
+
+// Content part type values for ChatMessageContentPart.Type.
+const (
+	ContentPartText        = "text"
+	ContentPartFile        = "file"
+	ContentPartImageURL    = "image_url"
+	ContentPartDocumentURL = "document_url"
+)
+
 // ChatMessage is one message in a chat completion request or response.
 type ChatMessage struct {
 	Role    string `json:"role"`
 	Content any    `json:"content"`
+}
+
+// TextMessage builds a plain-text ChatMessage for the given role
+// (RoleSystem, RoleUser, or RoleAssistant).
+func TextMessage(role, text string) ChatMessage {
+	return ChatMessage{Role: role, Content: text}
+}
+
+// MultipartMessage builds a ChatMessage whose content is a list of multimodal
+// parts (see TextPart, FilePart, ImageURLPart, DocumentURLPart).
+func MultipartMessage(role string, parts ...ChatMessageContentPart) ChatMessage {
+	return ChatMessage{Role: role, Content: parts}
+}
+
+// TextPart is a text content part.
+func TextPart(text string) ChatMessageContentPart {
+	return ChatMessageContentPart{Type: ContentPartText, Text: text}
+}
+
+// FilePart references a previously uploaded file by its API file id
+// (see Client.UploadFile).
+func FilePart(fileID string) ChatMessageContentPart {
+	return ChatMessageContentPart{Type: ContentPartFile, FileID: fileID}
+}
+
+// ImageURLPart references an image by URL.
+func ImageURLPart(url string) ChatMessageContentPart {
+	return ChatMessageContentPart{Type: ContentPartImageURL, ImageURL: url}
+}
+
+// DocumentURLPart references a document by URL.
+func DocumentURLPart(url string) ChatMessageContentPart {
+	return ChatMessageContentPart{Type: ContentPartDocumentURL, DocumentURL: url}
 }
 
 // ChatCompletionRequest is the body for POST /v1/chat/completions.

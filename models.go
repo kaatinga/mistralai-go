@@ -23,10 +23,31 @@ type ocrRequestBody struct {
 	DocumentAnnotationPrompt *string         `json:"document_annotation_prompt,omitempty"`
 }
 
+// Response format type values for ResponseFormat.Type.
+const (
+	ResponseFormatText       = "text"
+	ResponseFormatJSONObject = "json_object"
+	ResponseFormatJSONSchema = "json_schema"
+)
+
 // ResponseFormat selects structured OCR output (see Mistral OCR API).
 type ResponseFormat struct {
 	Type       string      `json:"type"`
 	JSONSchema *JSONSchema `json:"json_schema,omitempty"`
+}
+
+// JSONSchemaFormat builds a strict json_schema response_format from a schema
+// name and a JSON Schema document. Use it for ChatCompletionRequest.ResponseFormat,
+// ChatRequest.ResponseFormat, and OCRRequest.DocumentAnnotationFormat.
+func JSONSchemaFormat(name string, schema map[string]any) *ResponseFormat {
+	return &ResponseFormat{
+		Type: ResponseFormatJSONSchema,
+		JSONSchema: &JSONSchema{
+			Name:   name,
+			Schema: schema,
+			Strict: true,
+		},
+	}
 }
 
 // JSONSchema is the schema wrapper for document_annotation_format.

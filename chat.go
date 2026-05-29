@@ -103,9 +103,9 @@ func (c *client) processChat(ctx context.Context, req ChatRequest) (*ChatRespons
 
 	messages := make([]ChatMessage, 0, 2)
 	if system != "" {
-		messages = append(messages, ChatMessage{Role: "system", Content: system})
+		messages = append(messages, TextMessage(RoleSystem, system))
 	}
-	messages = append(messages, ChatMessage{Role: "user", Content: req.Input})
+	messages = append(messages, TextMessage(RoleUser, req.Input))
 
 	resp, err := c.ChatCompletion(ctx, ChatCompletionRequest{
 		Model:          model,
@@ -146,15 +146,15 @@ func chatPromptConfig(req ChatRequest, format OutputFormat) (system string, resp
 		system = joinSystem(system, jsonSystemHint)
 		if req.ResponseFormat != nil {
 			switch req.ResponseFormat.Type {
-			case "json_schema", "json_object":
+			case ResponseFormatJSONSchema, ResponseFormatJSONObject:
 				return system, req.ResponseFormat, nil
-			case "text", "":
+			case ResponseFormatText, "":
 				return "", nil, errors.New("mistral: ResponseFormat type must be json_object or json_schema for json output")
 			default:
 				return "", nil, fmt.Errorf("mistral: unsupported ResponseFormat type %q for json output", req.ResponseFormat.Type)
 			}
 		}
-		return system, &ResponseFormat{Type: "json_object"}, nil
+		return system, &ResponseFormat{Type: ResponseFormatJSONObject}, nil
 	default:
 		return "", nil, fmt.Errorf("mistral: unsupported output format %q", format)
 	}

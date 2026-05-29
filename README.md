@@ -76,7 +76,7 @@ func main() {
 			{Role: "system", Content: "You are concise."},
 			{Role: "user", Content: "Hello"},
 		},
-		Temperature: new(0.7), // pointer so temperature 0 is distinguishable from unset
+		Temperature: mistralai.Ptr(0.7), // pointer so temperature 0 is distinguishable from unset
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -121,6 +121,28 @@ if err = resp.JSON(&out); err != nil {
 ```
 
 For `json_schema`, set `ResponseFormat` on `ChatRequest`, `ChatCompletionRequest`, or `OCRRequest.DocumentAnnotationFormat`. Unmarshal OCR output with `OCRStructured[T]` or `OCRResponse.DocumentAnnotationInto[T]()`.
+
+### Ergonomic helpers
+
+- `Ptr[T](v) *T` — set optional pointer fields (`Temperature`, `TopP`, `ExtractHeader`, `IncludeImageBase64`, …) inline; `Ptr(0.0)` is an explicit zero, a nil pointer is "unset".
+- `JSONSchemaFormat(name, schema)` — build a strict `json_schema` `*ResponseFormat` without hand-writing the `ResponseFormat`/`JSONSchema` nesting.
+- `TextMessage(role, text)` / `MultipartMessage(role, parts...)` and `TextPart`, `FilePart`, `ImageURLPart`, `DocumentURLPart` — build messages and multimodal content without magic strings.
+- `RoleSystem`, `RoleUser`, `RoleAssistant` and `ResponseFormatText`, `ResponseFormatJSONObject`, `ResponseFormatJSONSchema` constants for the role and `response_format` type fields.
+
+```go
+req := mistralai.ChatCompletionRequest{
+	Model: mistralai.ChatModelPixtralLargeLatest,
+	Messages: []mistralai.ChatMessage{
+		mistralai.TextMessage(mistralai.RoleSystem, "Classify the document."),
+		mistralai.MultipartMessage(mistralai.RoleUser,
+			mistralai.TextPart("What kind of document is this?"),
+			mistralai.FilePart(fileID), // from cl.UploadFile
+		),
+	},
+	Temperature:    mistralai.Ptr(0.0),
+	ResponseFormat: mistralai.JSONSchemaFormat("doc_type", schema),
+}
+```
 
 ## Testing
 
