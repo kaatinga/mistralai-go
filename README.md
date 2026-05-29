@@ -76,7 +76,7 @@ func main() {
 			{Role: "system", Content: "You are concise."},
 			{Role: "user", Content: "Hello"},
 		},
-		Temperature: mistralai.Ptr(0.7), // pointer so temperature 0 is distinguishable from unset
+		Temperature: new(0.7), // pointer so temperature 0 is distinguishable from unset
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -120,11 +120,11 @@ if err = resp.JSON(&out); err != nil {
 }
 ```
 
-For `json_schema`, set `ResponseFormat` on `ChatRequest`, `ChatCompletionRequest`, or `OCRRequest.DocumentAnnotationFormat`. Unmarshal OCR output with `OCRStructured[T]` or `OCRResponse.DocumentAnnotationInto[T]()`.
+For `json_schema`, set `ResponseFormat` on `ChatRequest`, `ChatCompletionRequest`, or `OCRRequest.DocumentAnnotationFormat`. Unmarshal OCR output with `OCRStructured[T]` or `DocumentAnnotationInto[T](resp)`.
 
 ### Ergonomic helpers
 
-- `Ptr[T](v) *T` — set optional pointer fields (`Temperature`, `TopP`, `ExtractHeader`, `IncludeImageBase64`, …) inline; `Ptr(0.0)` is an explicit zero, a nil pointer is "unset".
+- `new(v)` (Go 1.26 built-in) — set optional pointer fields (`Temperature`, `TopP`, `ExtractHeader`, `IncludeImageBase64`, …) inline; `new(0.0)` is an explicit zero, a nil pointer is "unset".
 - `JSONSchemaFormat(name, schema)` — build a strict `json_schema` `*ResponseFormat` without hand-writing the `ResponseFormat`/`JSONSchema` nesting.
 - `TextMessage(role, text)` / `MultipartMessage(role, parts...)` and `TextPart`, `FilePart`, `ImageURLPart`, `DocumentURLPart` — build messages and multimodal content without magic strings.
 - `RoleSystem`, `RoleUser`, `RoleAssistant` and `ResponseFormatText`, `ResponseFormatJSONObject`, `ResponseFormatJSONSchema` constants for the role and `response_format` type fields.
@@ -139,8 +139,26 @@ req := mistralai.ChatCompletionRequest{
 			mistralai.FilePart(fileID), // from cl.UploadFile
 		),
 	},
-	Temperature:    mistralai.Ptr(0.0),
+	Temperature:    new(0.0),
 	ResponseFormat: mistralai.JSONSchemaFormat("doc_type", schema),
+}
+```
+
+### Error handling
+
+Non-200 responses return a typed `*APIError`. Inspect it with `errors.As` to
+branch on the HTTP status, error type, or whether the client already retried it:
+
+```go
+resp, err := cl.Chat(ctx, req)
+var apiErr *mistralai.APIError
+if errors.As(err, &apiErr) {
+	switch apiErr.StatusCode {
+	case http.StatusUnauthorized:
+		log.Fatal("bad API key")
+	case http.StatusTooManyRequests:
+		// apiErr.Retryable() == true; the client already exhausted WithMaxRetries
+	}
 }
 ```
 

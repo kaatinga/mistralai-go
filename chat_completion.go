@@ -68,7 +68,6 @@ type ChatCompletionRequest struct {
 	Temperature    *float64        `json:"temperature,omitempty"`
 	MaxTokens      int             `json:"max_tokens,omitempty"`
 	TopP           *float64        `json:"top_p,omitempty"`
-	Stream         bool            `json:"stream,omitempty"`
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
 }
 
@@ -140,11 +139,8 @@ func (c *client) ChatCompletion(ctx context.Context, req ChatCompletionRequest) 
 		return ChatCompletionResponse{}, fmt.Errorf("mistral: messages are required")
 	}
 
-	body := req
-	body.Stream = false
-
 	var resp ChatCompletionResponse
-	if err := c.postJSON(ctx, "/v1/chat/completions", body, &resp); err != nil {
+	if err := c.postJSON(ctx, "/v1/chat/completions", req, &resp); err != nil {
 		return ChatCompletionResponse{}, fmt.Errorf("mistral: chat completion: %w", err)
 	}
 	return resp, nil

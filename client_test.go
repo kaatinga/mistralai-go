@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -103,6 +104,8 @@ func TestOCR_apiError(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(apiErrorResponse{
 				Object:  "error",
 				Message: "invalid document",
+				Type:    "invalid_request_error",
+				Code:    "1100",
 			})
 		}
 	}))
@@ -120,6 +123,26 @@ func TestOCR_apiError(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "invalid document") {
 		t.Fatalf("err = %v", err)
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("want *APIError, got %T: %v", err, err)
+	}
+	if apiErr.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d", apiErr.StatusCode)
+	}
+	if apiErr.Message != "invalid document" {
+		t.Errorf("message = %q", apiErr.Message)
+	}
+	if apiErr.Type != "invalid_request_error" {
+		t.Errorf("type = %q", apiErr.Type)
+	}
+	if apiErr.Code != "1100" {
+		t.Errorf("code = %q", apiErr.Code)
+	}
+	if apiErr.Retryable() {
+		t.Error("400 should not be retryable")
 	}
 }
 
@@ -239,9 +262,6 @@ func TestChatCompletion_multiMessageAndTemperature(t *testing.T) {
 		}
 		if body.Temperature == nil || *body.Temperature != 0.7 {
 			t.Errorf("temperature = %v", body.Temperature)
-		}
-		if body.Stream {
-			t.Error("stream should be false")
 		}
 		if len(body.Messages) != 2 {
 			t.Fatalf("messages = %+v", body.Messages)

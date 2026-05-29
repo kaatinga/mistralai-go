@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/textproto"
 	"path"
-	"strings"
 	"time"
 )
 
@@ -167,16 +166,4 @@ func (c *client) uploadFile(ctx context.Context, filename string, content io.Rea
 
 func bearerToken(apiKey string) string {
 	return "Bearer " + apiKey
-}
-
-func apiError(status int, body []byte) error {
-	var e apiErrorResponse
-	if err := json.Unmarshal(body, &e); err == nil && e.Message != "" {
-		return fmt.Errorf("mistral api status %d: %s", status, e.Message)
-	}
-	msg := strings.TrimSpace(string(body))
-	if msg == "" {
-		msg = http.StatusText(status)
-	}
-	return fmt.Errorf("mistral api status %d: %s", status, msg)
 }
