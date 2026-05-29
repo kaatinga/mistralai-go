@@ -76,7 +76,7 @@ func main() {
 			{Role: "system", Content: "You are concise."},
 			{Role: "user", Content: "Hello"},
 		},
-		Temperature: 0.7,
+		Temperature: new(0.7), // pointer so temperature 0 is distinguishable from unset
 	})
 	if err != nil {
 		log.Fatal(err)

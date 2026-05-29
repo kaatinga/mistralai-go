@@ -163,11 +163,14 @@ func (c *client) UploadFile(ctx context.Context, req UploadFileRequest) (string,
 }
 
 func (r OCRRequest) validate() error {
-	if r.Filename == "" {
+	if strings.TrimSpace(r.Filename) == "" {
 		return errors.New("mistral: filename is required")
 	}
 	if r.Content == nil {
 		return errors.New("mistral: content is required")
+	}
+	if r.DocumentAnnotationPrompt != "" && r.DocumentAnnotationFormat == nil {
+		return errors.New("mistral: document_annotation_format is required with document_annotation_prompt")
 	}
 	return nil
 }
@@ -199,9 +202,6 @@ func (c *client) processOCR(ctx context.Context, req OCRRequest) (*OCRResponse, 
 	}
 	if req.DocumentAnnotationPrompt != "" {
 		body.DocumentAnnotationPrompt = new(req.DocumentAnnotationPrompt)
-	}
-	if body.DocumentAnnotationPrompt != nil && body.DocumentAnnotationFormat == nil {
-		return nil, errors.New("mistral: document_annotation_format is required with document_annotation_prompt")
 	}
 
 	var resp OCRResponse

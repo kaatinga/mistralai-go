@@ -237,7 +237,7 @@ func TestChatCompletion_multiMessageAndTemperature(t *testing.T) {
 		if body.Model != "mistral-large-latest" {
 			t.Errorf("model = %q", body.Model)
 		}
-		if body.Temperature != 0.7 {
+		if body.Temperature == nil || *body.Temperature != 0.7 {
 			t.Errorf("temperature = %v", body.Temperature)
 		}
 		if body.Stream {
@@ -267,7 +267,7 @@ func TestChatCompletion_multiMessageAndTemperature(t *testing.T) {
 			{Role: "system", Content: "sys"},
 			{Role: "user", Content: "hi"},
 		},
-		Temperature: 0.7,
+		Temperature: new(0.7),
 	})
 	if err != nil {
 		t.Fatal(err)

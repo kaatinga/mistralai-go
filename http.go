@@ -28,13 +28,13 @@ func isRetryStatusCode(code int) bool {
 }
 
 func (c *client) doJSON(ctx context.Context, method, endpoint string, payload, dest any) error {
-	var bodyReader io.Reader
+	var payloadBytes []byte
 	if payload != nil {
-		bts, err := json.Marshal(payload)
+		var err error
+		payloadBytes, err = json.Marshal(payload)
 		if err != nil {
 			return err
 		}
-		bodyReader = bytes.NewReader(bts)
 	}
 
 	url := c.baseURL + path.Clean("/"+endpoint)
@@ -51,6 +51,10 @@ func (c *client) doJSON(ctx context.Context, method, endpoint string, payload, d
 			delay *= 2
 		}
 
+		var bodyReader io.Reader
+		if payload != nil {
+			bodyReader = bytes.NewReader(payloadBytes)
+		}
 		req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 		if err != nil {
 			return err
@@ -63,11 +67,6 @@ func (c *client) doJSON(ctx context.Context, method, endpoint string, payload, d
 		resp, err := c.http.Do(req)
 		if err != nil {
 			lastErr = err
-			if payload != nil {
-				if bts, mErr := json.Marshal(payload); mErr == nil {
-					bodyReader = bytes.NewReader(bts)
-				}
-			}
 			continue
 		}
 
@@ -75,21 +74,11 @@ func (c *client) doJSON(ctx context.Context, method, endpoint string, payload, d
 		resp.Body.Close()
 		if err != nil {
 			lastErr = err
-			if payload != nil {
-				if bts, mErr := json.Marshal(payload); mErr == nil {
-					bodyReader = bytes.NewReader(bts)
-				}
-			}
 			continue
 		}
 
 		if isRetryStatusCode(resp.StatusCode) {
 			lastErr = apiError(resp.StatusCode, body)
-			if payload != nil {
-				if bts, mErr := json.Marshal(payload); mErr == nil {
-					bodyReader = bytes.NewReader(bts)
-				}
-			}
 			continue
 		}
 
