@@ -267,7 +267,7 @@ func TestChatCompletion_multiMessageAndTemperature(t *testing.T) {
 			{Role: "system", Content: "sys"},
 			{Role: "user", Content: "hi"},
 		},
-		Temperature: Ptr(0.7),
+		Temperature: new(0.7),
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -201,7 +201,7 @@ func (c *client) processOCR(ctx context.Context, req OCRRequest) (*OCRResponse, 
 		DocumentAnnotationFormat: req.DocumentAnnotationFormat,
 	}
 	if req.DocumentAnnotationPrompt != "" {
-		body.DocumentAnnotationPrompt = Ptr(req.DocumentAnnotationPrompt)
+		body.DocumentAnnotationPrompt = new(req.DocumentAnnotationPrompt)
 	}
 
 	var resp OCRResponse

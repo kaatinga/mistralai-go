@@ -89,7 +89,7 @@ func TestOCRStructured(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/ocr":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(OCRResponse{
-				DocumentAnnotation: Ptr(annotation),
+				DocumentAnnotation: new(annotation),
 				Pages:              []OCRPage{{Index: 0, Markdown: "hi"}},
 			})
 		default:
