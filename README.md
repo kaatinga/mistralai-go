@@ -285,7 +285,7 @@ If you need any of the following, one of the clients above will serve you better
 - **FIM / code completion** (Codestral) — available in `gage-technologies`.
 - **Function / tool calling** — available in `gage-technologies` and `onkyou/go-mistral`.
 - **Moderation and classification** — available only in `onkyou/go-mistral`.
-- **Agents and fine-tuning** — not implemented by any of these clients, including this one. (The **batch API** *is* now implemented here — see the Batch API section above.)
+- **Agents and fine-tuning** — not implemented by any of these clients, including this one.
 
 In short: choose `mistralai-go` for **OCR, document/file workflows, and strict structured output**; reach for `gage-technologies/mistral-go` for the broadest inference feature set (streaming, embeddings, FIM, tools) and `onkyou/go-mistral` if you specifically need moderation/classification or schema-validated tool calling.
 
