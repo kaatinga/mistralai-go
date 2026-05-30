@@ -378,6 +378,103 @@ func TestChatCompletion_multiMessageAndTemperature(t *testing.T) {
 	}
 }
 
+func TestListFiles(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v1/files" || r.Method != http.MethodGet {
+				http.NotFound(w, r)
+				return
+			}
+			if r.URL.RawQuery != "" {
+				t.Errorf("query = %q", r.URL.RawQuery)
+			}
+			_ = json.NewEncoder(w).Encode(FileList{
+				Object: "list",
+				Data: []File{{
+					ID:         "497f6eca-6276-4993-bfeb-53cbbbba6f09",
+					Object:     "file",
+					Filename:   "doc.pdf",
+					Purpose:    filePurposeOCR,
+					SampleType: "ocr",
+					Source:     "upload",
+				}},
+				Total: new(1),
+			})
+		}))
+		defer srv.Close()
+
+		cl, err := NewClient("test-key", WithBaseURL(srv.URL))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cl.Close()
+
+		list, err := cl.ListFiles(context.Background(), ListFilesRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if list.Object != "list" || len(list.Data) != 1 || list.Data[0].ID != "497f6eca-6276-4993-bfeb-53cbbbba6f09" {
+			t.Fatalf("list = %+v", list)
+		}
+		if list.Total == nil || *list.Total != 1 {
+			t.Fatalf("total = %v", list.Total)
+		}
+	})
+
+	t.Run("filters", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v1/files" || r.Method != http.MethodGet {
+				http.NotFound(w, r)
+				return
+			}
+			q := r.URL.Query()
+			if q.Get("page") != "1" || q.Get("page_size") != "50" {
+				t.Errorf("pagination: %v", q)
+			}
+			if q.Get("include_total") != "false" {
+				t.Errorf("include_total = %q", q.Get("include_total"))
+			}
+			if q.Get("purpose") != filePurposeOCR {
+				t.Errorf("purpose = %q", q.Get("purpose"))
+			}
+			if q.Get("search") != "invoice" {
+				t.Errorf("search = %q", q.Get("search"))
+			}
+			if got := q["sample_type"]; len(got) != 2 || got[0] != "instruct" || got[1] != "batch_result" {
+				t.Errorf("sample_type = %v", got)
+			}
+			if got := q["source"]; len(got) != 1 || got[0] != "upload" {
+				t.Errorf("source = %v", got)
+			}
+			if got := q["mimetypes"]; len(got) != 1 || got[0] != "application/pdf" {
+				t.Errorf("mimetypes = %v", got)
+			}
+			_ = json.NewEncoder(w).Encode(FileList{Object: "list", Data: nil})
+		}))
+		defer srv.Close()
+
+		cl, err := NewClient("k", WithBaseURL(srv.URL))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cl.Close()
+
+		_, err = cl.ListFiles(context.Background(), ListFilesRequest{
+			Page:         new(1),
+			PageSize:     new(50),
+			IncludeTotal: new(false),
+			Purpose:      filePurposeOCR,
+			Search:       "invoice",
+			SampleType:   []string{"instruct", "batch_result"},
+			Source:       []string{"upload"},
+			Mimetypes:    []string{"application/pdf"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
 func TestListModels(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" || r.Method != http.MethodGet {

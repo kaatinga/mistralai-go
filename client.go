@@ -32,6 +32,8 @@ type Client interface {
 	ListModels(ctx context.Context) (ModelList, error)
 	// UploadFile uploads file bytes and returns the API file id.
 	UploadFile(ctx context.Context, req UploadFileRequest) (string, error)
+	// ListFiles returns uploaded files for the API key (GET /v1/files).
+	ListFiles(ctx context.Context, req ListFilesRequest) (FileList, error)
 	// DeleteFile removes an uploaded file (DELETE /v1/files/{file_id}).
 	DeleteFile(ctx context.Context, fileID string) error
 	// Close releases resources. Safe to call more than once.

@@ -10,8 +10,11 @@ Synchronous Go client for the [Mistral API](https://docs.mistral.ai/api). Each c
 | `Chat` | `POST /v1/chat/completions` | Single user turn with optional system prompt and output format helpers |
 | `ChatCompletion` | `POST /v1/chat/completions` | Full control: message list, temperature, `response_format`, etc. |
 | `ListModels` | `GET /v1/models` | List models available to your API key |
+| `UploadFile` | `POST /v1/files` | Upload a file; returns file id |
+| `ListFiles` | `GET /v1/files` | List uploaded files (optional pagination and filters) |
+| `DeleteFile` | `DELETE /v1/files/{file_id}` | Remove an uploaded file |
 
-JSON API calls (`Chat`, `ChatCompletion`, `ListModels`, OCR after upload) retry on **429** and **5xx** with exponential backoff (default **5** attempts, context-aware). Configure with `WithMaxRetries`.
+JSON API calls (`Chat`, `ChatCompletion`, `ListModels`, `ListFiles`, `DeleteFile`, OCR after upload) retry on **429** and **5xx** with exponential backoff (default **5** attempts, context-aware). Configure with `WithMaxRetries`.
 
 ## Install
 
