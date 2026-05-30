@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -31,6 +32,8 @@ type Client interface {
 	ListModels(ctx context.Context) (ModelList, error)
 	// UploadFile uploads file bytes and returns the API file id.
 	UploadFile(ctx context.Context, req UploadFileRequest) (string, error)
+	// DeleteFile removes an uploaded file (DELETE /v1/files/{file_id}).
+	DeleteFile(ctx context.Context, fileID string) error
 	// Close releases resources. Safe to call more than once.
 	Close() error
 }
@@ -162,6 +165,13 @@ func (c *client) UploadFile(ctx context.Context, req UploadFileRequest) (string,
 	return c.uploadFile(ctx, req.Filename, req.Content, req.ContentType, purpose)
 }
 
+func (c *client) DeleteFile(ctx context.Context, fileID string) error {
+	if strings.TrimSpace(fileID) == "" {
+		return errors.New("mistral: file id is required")
+	}
+	return c.doJSON(ctx, http.MethodDelete, "/v1/files/"+url.PathEscape(fileID), nil, nil)
+}
+
 func (r OCRRequest) validate() error {
 	if strings.TrimSpace(r.Filename) == "" {
 		return errors.New("mistral: filename is required")
@@ -180,6 +190,11 @@ func (c *client) processOCR(ctx context.Context, req OCRRequest) (*OCRResponse, 
 	if err != nil {
 		return nil, fmt.Errorf("mistral: upload file: %w", err)
 	}
+	defer func() {
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_ = c.DeleteFile(cctx, fileID)
+	}()
 
 	model := req.Model
 	if model == "" {

@@ -15,10 +15,17 @@ import (
 func TestOCR_uploadAndOCR(t *testing.T) {
 	const wantFileID = "497f6eca-6276-4993-bfeb-53cbbbba6f09"
 	var uploadedBody []byte
+	var deletedFileID string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/v1/files":
+		switch {
+		case r.URL.Path == "/v1/files/"+wantFileID && r.Method == http.MethodDelete:
+			if r.Header.Get("Authorization") != "Bearer test-key" {
+				t.Errorf("delete: authorization %q", r.Header.Get("Authorization"))
+			}
+			deletedFileID = wantFileID
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/v1/files":
 			if r.Method != http.MethodPost {
 				t.Errorf("files: method %s", r.Method)
 			}
@@ -46,7 +53,7 @@ func TestOCR_uploadAndOCR(t *testing.T) {
 				Filename: "doc.pdf",
 				Purpose:  filePurposeOCR,
 			})
-		case "/v1/ocr":
+		case r.URL.Path == "/v1/ocr":
 			if r.Method != http.MethodPost {
 				t.Errorf("ocr: method %s", r.Method)
 			}
@@ -92,6 +99,80 @@ func TestOCR_uploadAndOCR(t *testing.T) {
 	if string(uploadedBody) != "%PDF-1.4 test" {
 		t.Fatalf("uploaded %q", uploadedBody)
 	}
+	if deletedFileID != wantFileID {
+		t.Fatalf("delete file_id = %q want %q", deletedFileID, wantFileID)
+	}
+}
+
+func TestDeleteFile(t *testing.T) {
+	const wantFileID = "497f6eca-6276-4993-bfeb-53cbbbba6f09"
+
+	t.Run("success", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v1/files/"+wantFileID || r.Method != http.MethodDelete {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Header.Get("Authorization") != "Bearer test-key" {
+				t.Errorf("authorization %q", r.Header.Get("Authorization"))
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer srv.Close()
+
+		cl, err := NewClient("test-key", WithBaseURL(srv.URL))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cl.Close()
+
+		if err := cl.DeleteFile(context.Background(), wantFileID); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("api_error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v1/files/"+wantFileID {
+				http.NotFound(w, r)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(apiErrorResponse{
+				Object:  "error",
+				Message: "file not found",
+				Type:    "invalid_request_error",
+			})
+		}))
+		defer srv.Close()
+
+		cl, err := NewClient("k", WithBaseURL(srv.URL))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cl.Close()
+
+		err = cl.DeleteFile(context.Background(), wantFileID)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusNotFound {
+			t.Fatalf("err = %v", err)
+		}
+	})
+
+	t.Run("empty_id", func(t *testing.T) {
+		cl, err := NewClient("k", WithBaseURL("http://127.0.0.1:1"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cl.Close()
+
+		if err := cl.DeleteFile(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "file id is required") {
+			t.Fatalf("err = %v", err)
+		}
+	})
 }
 
 func TestOCR_apiError(t *testing.T) {
