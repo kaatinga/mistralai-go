@@ -36,6 +36,20 @@ type Client interface {
 	ListFiles(ctx context.Context, req ListFilesRequest) (FileList, error)
 	// DeleteFile removes an uploaded file (DELETE /v1/files/{file_id}).
 	DeleteFile(ctx context.Context, fileID string) error
+	// DownloadFile downloads raw file content (GET /v1/files/{file_id}/content),
+	// e.g. a batch job's output or error JSONL file.
+	DownloadFile(ctx context.Context, fileID string) ([]byte, error)
+	// UploadBatchInput builds a JSONL input file from entries and uploads it with
+	// purpose "batch"; returns the file id for CreateBatchJobRequest.InputFiles.
+	UploadBatchInput(ctx context.Context, filename string, entries []BatchEntry) (string, error)
+	// CreateBatchJob creates an async batch job (POST /v1/batch/jobs).
+	CreateBatchJob(ctx context.Context, req CreateBatchJobRequest) (BatchJob, error)
+	// ListBatchJobs lists batch jobs for the API key (GET /v1/batch/jobs).
+	ListBatchJobs(ctx context.Context, req ListBatchJobsRequest) (BatchJobList, error)
+	// GetBatchJob fetches one batch job (GET /v1/batch/jobs/{job_id}).
+	GetBatchJob(ctx context.Context, jobID string) (BatchJob, error)
+	// CancelBatchJob requests cancellation (POST /v1/batch/jobs/{job_id}/cancel).
+	CancelBatchJob(ctx context.Context, jobID string) (BatchJob, error)
 	// Close releases resources. Safe to call more than once.
 	Close() error
 }

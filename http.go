@@ -107,6 +107,59 @@ func (c *client) getJSON(ctx context.Context, endpoint string, dest any) error {
 	return c.doJSON(ctx, http.MethodGet, endpoint, nil, dest)
 }
 
+// getRaw issues a GET and returns the raw 200 response body. Unlike getJSON it
+// does not unmarshal, so it suits endpoints returning non-JSON-object payloads
+// (e.g. JSONL file content). It shares doJSON's retry-on-429/5xx behavior.
+func (c *client) getRaw(ctx context.Context, endpoint string) ([]byte, error) {
+	url := c.baseURL + path.Clean("/"+endpoint)
+	delay := retryInitialDelay
+	var lastErr error
+
+	for attempt := 0; attempt < c.maxRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
+			delay *= 2
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", bearerToken(c.apiKey))
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if isRetryStatusCode(resp.StatusCode) {
+			lastErr = apiError(resp.StatusCode, body)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, apiError(resp.StatusCode, body)
+		}
+		return body, nil
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("mistral: request retries exhausted")
+	}
+	return nil, lastErr
+}
+
 func (c *client) uploadFile(ctx context.Context, filename string, content io.Reader, contentType, purpose string) (string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
