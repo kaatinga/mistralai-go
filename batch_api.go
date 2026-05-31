@@ -94,7 +94,8 @@ type CreateBatchJobRequest struct {
 	Endpoint string
 	// InputFiles are JSONL file ids (see UploadBatchInput). At least one is required.
 	InputFiles []string
-	// Model overrides per-entry model when set; optional when each entry body carries a model.
+	// Model is required by the Batch API at job level (per-entry body model is optional then).
+	// When empty, CreateBatchJob defaults by endpoint (OCR → DefaultOCRModel, chat → DefaultChatModel).
 	Model string
 	// Metadata is arbitrary string metadata stored on the job.
 	Metadata map[string]string
@@ -125,7 +126,31 @@ func (r CreateBatchJobRequest) validate() error {
 	if r.TimeoutHours < 0 {
 		return errors.New("mistral: timeout_hours must not be negative")
 	}
+	if _, err := r.jobModel(); err != nil {
+		return err
+	}
 	return nil
+}
+
+func defaultBatchJobModel(endpoint string) string {
+	switch endpoint {
+	case BatchEndpointOCR:
+		return DefaultOCRModel
+	case BatchEndpointChatCompletions:
+		return DefaultChatModel
+	default:
+		return ""
+	}
+}
+
+func (r CreateBatchJobRequest) jobModel() (string, error) {
+	if m := strings.TrimSpace(r.Model); m != "" {
+		return m, nil
+	}
+	if m := defaultBatchJobModel(r.Endpoint); m != "" {
+		return m, nil
+	}
+	return "", errors.New("mistral: model is required")
 }
 
 // ListBatchJobsRequest filters and paginates GET /v1/batch/jobs.
@@ -154,10 +179,14 @@ func (c *client) CreateBatchJob(ctx context.Context, req CreateBatchJobRequest) 
 	if err := req.validate(); err != nil {
 		return BatchJob{}, err
 	}
+	model, err := req.jobModel()
+	if err != nil {
+		return BatchJob{}, err
+	}
 	body := createBatchJobBody{
 		Endpoint:     req.Endpoint,
 		InputFiles:   req.InputFiles,
-		Model:        req.Model,
+		Model:        model,
 		Metadata:     req.Metadata,
 		TimeoutHours: req.TimeoutHours,
 	}

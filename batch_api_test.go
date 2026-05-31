@@ -83,6 +83,40 @@ func TestCreateBatchJob(t *testing.T) {
 	}
 }
 
+func TestCreateBatchJob_OCR_defaultsModel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/batch/jobs" || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		var body createBatchJobBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Endpoint != BatchEndpointOCR {
+			t.Errorf("endpoint = %q", body.Endpoint)
+		}
+		if body.Model != DefaultOCRModel {
+			t.Errorf("model = %q, want %q", body.Model, DefaultOCRModel)
+		}
+		_ = json.NewEncoder(w).Encode(BatchJob{ID: "job-ocr", Status: BatchStatusQueued, Endpoint: BatchEndpointOCR})
+	}))
+	defer srv.Close()
+
+	cl, err := NewClient("test-key", WithBaseURL(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+
+	if _, err := cl.CreateBatchJob(context.Background(), CreateBatchJobRequest{
+		Endpoint:   BatchEndpointOCR,
+		InputFiles: []string{"file-abc"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCreateBatchJob_validate(t *testing.T) {
 	cl, err := NewClient("test-key", WithBaseURL("http://example.invalid"))
 	if err != nil {
@@ -95,6 +129,7 @@ func TestCreateBatchJob_validate(t *testing.T) {
 		"no input files":   {Endpoint: BatchEndpointChatCompletions},
 		"empty input file": {Endpoint: BatchEndpointChatCompletions, InputFiles: []string{" "}},
 		"negative timeout": {Endpoint: BatchEndpointChatCompletions, InputFiles: []string{"f"}, TimeoutHours: -1},
+		"missing model":    {Endpoint: BatchEndpointEmbeddings, InputFiles: []string{"f"}},
 	}
 	for name, req := range cases {
 		t.Run(name, func(t *testing.T) {

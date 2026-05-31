@@ -185,6 +185,7 @@ if err != nil {
 
 job, err := cl.CreateBatchJob(ctx, mistralai.CreateBatchJobRequest{
 	Endpoint:   mistralai.BatchEndpointChatCompletions,
+	Model:      mistralai.ChatModelMistralSmallLatest, // required at job level; defaults per endpoint if omitted
 	InputFiles: []string{inputFileID},
 })
 if err != nil {
