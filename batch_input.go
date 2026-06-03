@@ -37,6 +37,12 @@ func ChatCompletionEntry(customID string, req ChatCompletionRequest) BatchEntry 
 	return BatchEntry{CustomID: customID, Body: req}
 }
 
+// EmbeddingEntry builds a batch entry for the /v1/embeddings endpoint from a
+// typed EmbeddingRequest.
+func EmbeddingEntry(customID string, req EmbeddingRequest) BatchEntry {
+	return BatchEntry{CustomID: customID, Body: req}
+}
+
 // OCREntryOption configures the optional fields of an OCR batch entry body.
 type OCREntryOption func(*ocrRequestBody)
 

@@ -28,6 +28,8 @@ type Client interface {
 	Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
 	// ChatCompletion runs POST /v1/chat/completions with full message control.
 	ChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error)
+	// Embeddings runs POST /v1/embeddings.
+	Embeddings(ctx context.Context, req EmbeddingRequest) (EmbeddingResponse, error)
 	// ListModels returns models available to the API key (GET /v1/models).
 	ListModels(ctx context.Context) (ModelList, error)
 	// UploadFile uploads file bytes and returns the API file id.

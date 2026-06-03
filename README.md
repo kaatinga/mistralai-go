@@ -9,6 +9,7 @@ Synchronous Go client for the [Mistral API](https://docs.mistral.ai/api). Each c
 | `OCR` | `POST /v1/files`, then `POST /v1/ocr` | Document OCR via file upload |
 | `Chat` | `POST /v1/chat/completions` | Single user turn with optional system prompt and output format helpers |
 | `ChatCompletion` | `POST /v1/chat/completions` | Full control: message list, temperature, `response_format`, etc. |
+| `Embeddings` | `POST /v1/embeddings` | Text embeddings (`mistral-embed`, batch input, optional dimensions/dtype) |
 | `ListModels` | `GET /v1/models` | List models available to your API key |
 | `UploadFile` | `POST /v1/files` | Upload a file; returns file id |
 | `ListFiles` | `GET /v1/files` | List uploaded files (optional pagination and filters) |
@@ -20,7 +21,7 @@ Synchronous Go client for the [Mistral API](https://docs.mistral.ai/api). Each c
 | `GetBatchJob` | `GET /v1/batch/jobs/{job_id}` | Fetch one batch job |
 | `CancelBatchJob` | `POST /v1/batch/jobs/{job_id}/cancel` | Request cancellation of a batch job |
 
-JSON API calls (`Chat`, `ChatCompletion`, `ListModels`, `ListFiles`, `DeleteFile`, `DownloadFile`, the batch job calls, OCR after upload) retry on **429** and **5xx** with exponential backoff (default **5** attempts, context-aware). Configure with `WithMaxRetries`.
+JSON API calls (`Chat`, `ChatCompletion`, `Embeddings`, `ListModels`, `ListFiles`, `DeleteFile`, `DownloadFile`, the batch job calls, OCR after upload) retry on **429** and **5xx** with exponential backoff (default **5** attempts, context-aware). Configure with `WithMaxRetries`.
 
 ## Install
 
@@ -110,6 +111,30 @@ func main() {
 
 `Chat` is implemented on top of `ChatCompletion` internally.
 
+### Embeddings
+
+```go
+resp, err := cl.Embeddings(ctx, mistralai.EmbeddingRequest{
+	Model: mistralai.EmbeddingModelMistralEmbed,
+	Input: mistralai.EmbeddingInputStrings(
+		"Embed this sentence.",
+		"As well as this one.",
+	),
+})
+if err != nil {
+	log.Fatal(err)
+}
+vecs, err := resp.Float64Vectors()
+if err != nil {
+	log.Fatal(err)
+}
+log.Println(len(vecs), len(vecs[0]))
+```
+
+Optional request fields: `encoding_format` (`float` or `base64`), `output_dimension`, `output_dtype` (`float`, `int8`, `uint8`, `binary`, `ubinary`), and `metadata`. Decode each vector with `EmbeddingData.Float64s()` or `Float32s()` (handles JSON float arrays and base64-encoded float32 payloads).
+
+For batch jobs on `/v1/embeddings`, use `EmbeddingEntry` and `ParseBatchResults[mistralai.EmbeddingResponse]`.
+
 ### Client options
 
 - `WithHTTPClient` — custom `http.Client` (default timeout **10 minutes**, suitable for OCR).
@@ -161,10 +186,10 @@ file. It is **not** for latency-sensitive calls — a job completes within its
 `timeout_hours` (default 24), not immediately.
 
 Build the input from the same typed request values you already use:
-`ChatCompletionEntry` for `/v1/chat/completions`, `OCREntry` for `/v1/ocr`
-(referencing an already-uploaded `file_id`), or `Entry(customID, body)` for any
-other endpoint. Parse results back into the matching typed response with
-`ParseBatchResults[T]`.
+`ChatCompletionEntry` for `/v1/chat/completions`, `EmbeddingEntry` for
+`/v1/embeddings`, `OCREntry` for `/v1/ocr` (referencing an already-uploaded
+`file_id`), or `Entry(customID, body)` for any other endpoint. Parse results
+back into the matching typed response with `ParseBatchResults[T]`.
 
 ```go
 entries := []mistralai.BatchEntry{
@@ -254,7 +279,7 @@ with the three most widely used community clients (state as of May 2026):
 |---|:---:|:---:|:---:|:---:|
 | Chat completions | ✅ | ✅ | ✅ | ✅ |
 | Streaming chat | ❌ | ✅ | ✅ | ✅ |
-| Embeddings | ❌ | ✅ | ✅ | ✅ |
+| Embeddings | ✅ | ✅ | ✅ | ✅ |
 | FIM / code completion | ❌ | ✅ | ❌ | ❌ |
 | Function / tool calling | ❌ | ✅ | ❌ | ✅ |
 | Moderation / classification | ❌ | ❌ | ❌ | ✅ |
@@ -282,7 +307,6 @@ with the three most widely used community clients (state as of May 2026):
 If you need any of the following, one of the clients above will serve you better today:
 
 - **Streaming responses** — `mistralai-go` is fully synchronous (blocks until the complete JSON body returns). All three other clients support streamed chat. The OCR-first design assumes a single blocking call.
-- **Embeddings** — not implemented. Available in all three other clients (`mistral-embed`).
 - **FIM / code completion** (Codestral) — available in `gage-technologies`.
 - **Function / tool calling** — available in `gage-technologies` and `onkyou/go-mistral`.
 - **Moderation and classification** — available only in `onkyou/go-mistral`.
