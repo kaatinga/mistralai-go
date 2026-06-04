@@ -24,6 +24,8 @@ const (
 type Client interface {
 	// OCR uploads the document via POST /v1/files, then POST /v1/ocr; blocks until 200 or error.
 	OCR(ctx context.Context, req OCRRequest) (OCRResponse, error)
+	// OCRByFileID runs POST /v1/ocr for an already-uploaded file id (no auto-delete).
+	OCRByFileID(ctx context.Context, fileID string, model string) (OCRResponse, error)
 	// Chat runs POST /v1/chat/completions with a single user turn; blocks until 200 or error.
 	Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
 	// ChatCompletion runs POST /v1/chat/completions with full message control.
