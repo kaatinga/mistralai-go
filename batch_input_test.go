@@ -56,6 +56,55 @@ func TestBuildBatchInputJSONL(t *testing.T) {
 	}
 }
 
+func TestBuildBatchInputJSONL_toolsRoundTrip(t *testing.T) {
+	entries := []BatchEntry{
+		ChatCompletionEntry("tools", ChatCompletionRequest{
+			Model: ChatModelMistralSmallLatest,
+			Messages: []ChatMessage{
+				TextMessage(RoleUser, "How many?"),
+			},
+			Tools: []Tool{
+				FunctionTool("count_apartments", "Count apartments", map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"building_id": map[string]any{"type": "integer"},
+					},
+				}),
+			},
+			ToolChoice: ToolChoiceAuto,
+		}),
+	}
+
+	data, err := BuildBatchInputJSONL(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var lines []batchResultLineStub
+	sc := bufio.NewScanner(bytes.NewReader(data))
+	for sc.Scan() {
+		var l batchResultLineStub
+		if err := json.Unmarshal(sc.Bytes(), &l); err != nil {
+			t.Fatal(err)
+		}
+		lines = append(lines, l)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("got %d lines", len(lines))
+	}
+
+	var req ChatCompletionRequest
+	if err := json.Unmarshal(lines[0].Body, &req); err != nil {
+		t.Fatal(err)
+	}
+	if len(req.Tools) != 1 || req.Tools[0].Function.Name != "count_apartments" {
+		t.Fatalf("tools = %+v", req.Tools)
+	}
+	if req.ToolChoice != ToolChoiceAuto {
+		t.Fatalf("tool_choice = %v", req.ToolChoice)
+	}
+}
+
 // batchResultLineStub mirrors the {custom_id, body} input line for assertions.
 type batchResultLineStub struct {
 	CustomID string          `json:"custom_id"`

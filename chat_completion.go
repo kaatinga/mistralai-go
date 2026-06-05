@@ -24,8 +24,11 @@ const (
 
 // ChatMessage is one message in a chat completion request or response.
 type ChatMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"`
+	Role       string     `json:"role"`
+	Content    any        `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Name       string     `json:"name,omitempty"`
 }
 
 // TextMessage builds a plain-text ChatMessage for the given role
@@ -63,18 +66,54 @@ func DocumentURLPart(url string) ChatMessageContentPart {
 
 // ChatCompletionRequest is the body for POST /v1/chat/completions.
 type ChatCompletionRequest struct {
-	Model          string          `json:"model"`
-	Messages       []ChatMessage   `json:"messages"`
-	Temperature    *float64        `json:"temperature,omitempty"`
-	MaxTokens      int             `json:"max_tokens,omitempty"`
-	TopP           *float64        `json:"top_p,omitempty"`
-	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+	Model             string          `json:"model"`
+	Messages          []ChatMessage   `json:"messages"`
+	Temperature       *float64        `json:"temperature,omitempty"`
+	MaxTokens         int             `json:"max_tokens,omitempty"`
+	TopP              *float64        `json:"top_p,omitempty"`
+	ResponseFormat    *ResponseFormat `json:"response_format,omitempty"`
+	Tools             []Tool          `json:"tools,omitempty"`
+	ToolChoice        any             `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool           `json:"parallel_tool_calls,omitempty"`
 }
 
 // ChatCompletionResponseChoice is one completion choice.
 type ChatCompletionResponseChoice struct {
-	Index   int         `json:"index"`
-	Message ChatMessage `json:"message"`
+	Index        int         `json:"index"`
+	Message      ChatMessage `json:"message"`
+	FinishReason string      `json:"finish_reason"`
+}
+
+// ToolMessage builds a tool result message for a prior tool_call.
+func ToolMessage(toolCallID, name, content string) ChatMessage {
+	return ChatMessage{
+		Role:       RoleTool,
+		ToolCallID: toolCallID,
+		Name:       name,
+		Content:    content,
+	}
+}
+
+// AssistantToolCallsMessage builds an assistant message that requests tool calls.
+func AssistantToolCallsMessage(calls []ToolCall) ChatMessage {
+	return ChatMessage{
+		Role:      RoleAssistant,
+		Content:   nil,
+		ToolCalls: calls,
+	}
+}
+
+// HasToolCalls reports whether the choice message contains tool calls.
+func (c ChatCompletionResponseChoice) HasToolCalls() bool {
+	return len(c.Message.ToolCalls) > 0
+}
+
+// FirstChoice returns the first completion choice or an error if missing.
+func (r ChatCompletionResponse) FirstChoice() (ChatCompletionResponseChoice, error) {
+	if len(r.Choices) == 0 {
+		return ChatCompletionResponseChoice{}, fmt.Errorf("mistral: chat response has no choices")
+	}
+	return r.Choices[0], nil
 }
 
 // UsageInfo reports token usage from a chat completion.
@@ -112,12 +151,19 @@ func (r ChatCompletionResponse) AllChoicesContent() string {
 
 // FirstChoiceContent returns trimmed content from the first choice, or an error if missing/empty.
 func (r ChatCompletionResponse) FirstChoiceContent() (string, error) {
-	if len(r.Choices) == 0 {
-		return "", fmt.Errorf("mistral: chat response has no choices")
+	choice, err := r.FirstChoice()
+	if err != nil {
+		return "", err
 	}
-	raw := r.Choices[0].Message.Content
+	if choice.HasToolCalls() {
+		return "", fmt.Errorf("mistral: choice has tool_calls, no text content yet")
+	}
+	raw := choice.Message.Content
 	content, ok := raw.(string)
 	if !ok {
+		if raw == nil {
+			return "", fmt.Errorf("mistral: chat response has empty content")
+		}
 		encoded, err := json.Marshal(raw)
 		if err != nil {
 			return "", fmt.Errorf("mistral: chat response has unsupported content type")

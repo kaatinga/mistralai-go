@@ -107,9 +107,49 @@ func main() {
 ### High-level `Chat` vs `ChatCompletion`
 
 - **`Chat`** builds a short message list from `Input` and optional `System`, and can request text, markdown, or JSON output via `Format` / `ResponseFormat`.
-- **`ChatCompletion`** maps directly to the REST request body: any number of messages, `temperature`, `max_tokens`, `top_p`, and `response_format`. Use this for conversation history or app-specific control.
+- **`ChatCompletion`** maps directly to the REST request body: any number of messages, `temperature`, `max_tokens`, `top_p`, `response_format`, and **tool calling** (`tools`, `tool_choice`, `parallel_tool_calls`). Use this for conversation history or app-specific control.
 
 `Chat` is implemented on top of `ChatCompletion` internally.
+
+### Tool calling
+
+Expose functions to the model via `tools` on `ChatCompletionRequest`. When the model needs data, it returns `tool_calls` on the assistant message; run your handlers and send `role: "tool"` messages back, then call `ChatCompletion` again (or use `ChatCompletionWithTools` to run that loop).
+
+`parallel_tool_calls` defaults to `true` on the Mistral API when omitted, so the model may request multiple functions in one assistant turn.
+
+Do not combine `response_format: json_schema` with `tools` on the same request.
+
+```go
+paramsSchema := map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"building_id": map[string]any{"type": "integer"},
+	},
+}
+tools := []mistralai.Tool{
+	mistralai.FunctionTool("count_apartments", "Count apartments in confirmed project data", paramsSchema),
+}
+
+handler := func(ctx context.Context, call mistralai.ToolCall) (string, error) {
+	// Parse call.Function.Arguments (JSON string), run your Go logic, return JSON text.
+	return `{"count":8}`, nil
+}
+
+resp, err := mistralai.ChatCompletionWithTools(ctx, cl, mistralai.ChatCompletionRequest{
+	Model: mistralai.DefaultChatModel,
+	Messages: []mistralai.ChatMessage{
+		mistralai.TextMessage(mistralai.RoleUser, "How many apartments?"),
+	},
+	Tools:      tools,
+	ToolChoice: mistralai.ToolChoiceAuto,
+}, handler, 3)
+if err != nil {
+	log.Fatal(err)
+}
+answer, err := resp.FirstChoiceContent()
+```
+
+Manual loop: check `choice, _ := resp.FirstChoice()` and `choice.HasToolCalls()`, append `choice.Message` plus `mistralai.ToolMessage(call.ID, call.Function.Name, result)` for each call, then call `ChatCompletion` again with the extended `Messages` slice.
 
 ### Embeddings
 
@@ -161,7 +201,8 @@ For `json_schema`, set `ResponseFormat` on `ChatRequest`, `ChatCompletionRequest
 - `new(v)` (Go 1.26 built-in) — set optional pointer fields (`Temperature`, `TopP`, `ExtractHeader`, `IncludeImageBase64`, …) inline; `new(0.0)` is an explicit zero, a nil pointer is "unset".
 - `JSONSchemaFormat(name, schema)` — build a strict `json_schema` `*ResponseFormat` without hand-writing the `ResponseFormat`/`JSONSchema` nesting.
 - `TextMessage(role, text)` / `MultipartMessage(role, parts...)` and `TextPart`, `FilePart`, `ImageURLPart`, `DocumentURLPart` — build messages and multimodal content without magic strings.
-- `RoleSystem`, `RoleUser`, `RoleAssistant` and `ResponseFormatText`, `ResponseFormatJSONObject`, `ResponseFormatJSONSchema` constants for the role and `response_format` type fields.
+- `FunctionTool(name, description, parameters)` / `ToolMessage(toolCallID, name, content)` / `ChatCompletionWithTools` — function calling on chat completions.
+- `RoleSystem`, `RoleUser`, `RoleAssistant`, `RoleTool` and `ResponseFormatText`, `ResponseFormatJSONObject`, `ResponseFormatJSONSchema` constants for the role and `response_format` type fields.
 
 ```go
 req := mistralai.ChatCompletionRequest{
@@ -281,7 +322,7 @@ with the three most widely used community clients (state as of May 2026):
 | Streaming chat | ❌ | ✅ | ✅ | ✅ |
 | Embeddings | ✅ | ✅ | ✅ | ✅ |
 | FIM / code completion | ❌ | ✅ | ❌ | ❌ |
-| Function / tool calling | ❌ | ✅ | ❌ | ✅ |
+| Function / tool calling | ✅ | ✅ | ❌ | ✅ |
 | Moderation / classification | ❌ | ❌ | ❌ | ✅ |
 | **OCR + document annotation** | ✅ | ❌ | ❌ | ❌ |
 | **File API (upload / list / delete / download)** | ✅ | ❌ | ❌ | ❌ |
@@ -308,11 +349,10 @@ If you need any of the following, one of the clients above will serve you better
 
 - **Streaming responses** — `mistralai-go` is fully synchronous (blocks until the complete JSON body returns). All three other clients support streamed chat. The OCR-first design assumes a single blocking call.
 - **FIM / code completion** (Codestral) — available in `gage-technologies`.
-- **Function / tool calling** — available in `gage-technologies` and `onkyou/go-mistral`.
 - **Moderation and classification** — available only in `onkyou/go-mistral`.
 - **Agents and fine-tuning** — not implemented by any of these clients, including this one.
 
-In short: choose `mistralai-go` for **OCR, document/file workflows, and strict structured output**; reach for `gage-technologies/mistral-go` for the broadest inference feature set (streaming, embeddings, FIM, tools) and `onkyou/go-mistral` if you specifically need moderation/classification or schema-validated tool calling.
+In short: choose `mistralai-go` for **OCR, document/file workflows, tool calling, and strict structured output**; reach for `gage-technologies/mistral-go` for streaming and FIM, and `onkyou/go-mistral` if you specifically need moderation/classification.
 
 ## Testing
 
