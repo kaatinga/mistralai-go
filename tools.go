@@ -26,12 +26,14 @@ type FunctionDef struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description,omitempty"`
 	Parameters  map[string]any `json:"parameters"`
+	Strict      bool           `json:"strict,omitempty"`
 }
 
 // ToolCall is one function invocation requested by the model.
 type ToolCall struct {
 	ID       string       `json:"id"`
 	Type     string       `json:"type"`
+	Index    *int         `json:"index,omitempty"`
 	Function FunctionCall `json:"function"`
 }
 
@@ -52,8 +54,12 @@ type NamedToolChoiceFunc struct {
 	Name string `json:"name"`
 }
 
-// FunctionTool builds a function tool definition.
+// FunctionTool builds a function tool definition. A nil parameters map defaults
+// to an empty object schema so the request never sends "parameters": null.
 func FunctionTool(name, description string, parameters map[string]any) Tool {
+	if parameters == nil {
+		parameters = map[string]any{"type": "object"}
+	}
 	return Tool{
 		Type: ToolTypeFunction,
 		Function: FunctionDef{

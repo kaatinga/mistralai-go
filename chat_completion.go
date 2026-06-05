@@ -136,6 +136,9 @@ type ChatCompletionResponse struct {
 func (r ChatCompletionResponse) AllChoicesContent() string {
 	var b strings.Builder
 	for _, c := range r.Choices {
+		if c.Message.Content == nil {
+			continue
+		}
 		if s, ok := c.Message.Content.(string); ok {
 			b.WriteString(s)
 			continue

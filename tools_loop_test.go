@@ -173,6 +173,113 @@ func TestChatCompletionWithTools_parallelCalls(t *testing.T) {
 	}
 }
 
+func TestChatCompletionWithTools_preservesToolChoice(t *testing.T) {
+	var calls int
+	var mu sync.Mutex
+	var toolChoices []any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body ChatCompletionRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		calls++
+		n := calls
+		toolChoices = append(toolChoices, body.ToolChoice)
+		mu.Unlock()
+
+		var resp ChatCompletionResponse
+		if n == 1 {
+			resp = ChatCompletionResponse{
+				Choices: []ChatCompletionResponseChoice{{
+					FinishReason: FinishReasonToolCalls,
+					Message: AssistantToolCallsMessage([]ToolCall{{
+						ID:       "call_1",
+						Type:     ToolTypeFunction,
+						Function: FunctionCall{Name: "fn", Arguments: `{}`},
+					}}),
+				}},
+			}
+		} else {
+			resp = ChatCompletionResponse{
+				Choices: []ChatCompletionResponseChoice{{
+					FinishReason: FinishReasonStop,
+					Message:      TextMessage(RoleAssistant, "done"),
+				}},
+			}
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	cl, err := NewClient("test-key", WithBaseURL(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+
+	_, err = ChatCompletionWithTools(context.Background(), cl, ChatCompletionRequest{
+		Model:      DefaultChatModel,
+		Messages:   []ChatMessage{TextMessage(RoleUser, "go")},
+		Tools:      []Tool{FunctionTool("fn", "", nil)},
+		ToolChoice: ToolChoiceNamed("fn"),
+	}, func(context.Context, ToolCall) (string, error) {
+		return "{}", nil
+	}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(toolChoices) != 2 {
+		t.Fatalf("calls = %d", len(toolChoices))
+	}
+	// req is sent verbatim every round: the named (object) choice must persist,
+	// not be silently rewritten by the loop.
+	for i, tc := range toolChoices {
+		if _, ok := tc.(map[string]any); !ok {
+			t.Fatalf("tool_choice on call %d should be the named (object) choice, got %#v", i+1, tc)
+		}
+	}
+}
+
+func TestChatCompletionWithTools_doesNotMutateCallerMessages(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(ChatCompletionResponse{
+			Choices: []ChatCompletionResponseChoice{{
+				FinishReason: FinishReasonToolCalls,
+				Message: AssistantToolCallsMessage([]ToolCall{{
+					ID:       "call_1",
+					Type:     ToolTypeFunction,
+					Function: FunctionCall{Name: "fn", Arguments: `{}`},
+				}}),
+			}},
+		})
+	}))
+	defer srv.Close()
+
+	cl, err := NewClient("test-key", WithBaseURL(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+
+	// Give the slice spare capacity so a naive append would clobber it.
+	msgs := make([]ChatMessage, 1, 8)
+	msgs[0] = TextMessage(RoleUser, "go")
+
+	_, _ = ChatCompletionWithTools(context.Background(), cl, ChatCompletionRequest{
+		Model:    DefaultChatModel,
+		Messages: msgs,
+		Tools:    []Tool{FunctionTool("fn", "", nil)},
+	}, func(context.Context, ToolCall) (string, error) {
+		return "{}", nil
+	}, 1)
+
+	if len(msgs) != 1 || msgs[0].Role != RoleUser {
+		t.Fatalf("caller messages were mutated: %+v", msgs)
+	}
+}
+
 func TestChatCompletionWithTools_maxRoundsExceeded(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(ChatCompletionResponse{

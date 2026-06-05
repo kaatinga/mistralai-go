@@ -34,6 +34,8 @@ func ChatCompletionWithTools(
 		return ChatCompletionResponse{}, fmt.Errorf("mistral: maxRounds must be positive")
 	}
 
+	req.Messages = append([]ChatMessage(nil), req.Messages...)
+
 	resp, err := c.ChatCompletion(ctx, req)
 	if err != nil {
 		return ChatCompletionResponse{}, err
