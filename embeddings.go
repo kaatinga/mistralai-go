@@ -17,13 +17,13 @@ const (
 	// DefaultEmbeddingModel is used when EmbeddingRequest.Model is empty.
 	DefaultEmbeddingModel = EmbeddingModelMistralEmbed
 
-	EncodingFormatFloat   = "float"
-	EncodingFormatBase64  = "base64"
-	OutputDTypeFloat      = "float"
-	OutputDTypeInt8       = "int8"
-	OutputDTypeUint8      = "uint8"
-	OutputDTypeBinary     = "binary"
-	OutputDTypeUBinary    = "ubinary"
+	EncodingFormatFloat  = "float"
+	EncodingFormatBase64 = "base64"
+	OutputDTypeFloat     = "float"
+	OutputDTypeInt8      = "int8"
+	OutputDTypeUint8     = "uint8"
+	OutputDTypeBinary    = "binary"
+	OutputDTypeUBinary   = "ubinary"
 )
 
 // EmbeddingInput is the request "input" field: one string or a batch of strings.
@@ -51,12 +51,12 @@ func (in EmbeddingInput) MarshalJSON() ([]byte, error) {
 
 // EmbeddingRequest is the body for POST /v1/embeddings.
 type EmbeddingRequest struct {
-	Model           string            `json:"model"`
-	Input           EmbeddingInput    `json:"input"`
-	EncodingFormat  string            `json:"encoding_format,omitempty"`
-	OutputDimension *int              `json:"output_dimension,omitempty"`
-	OutputDType     string            `json:"output_dtype,omitempty"`
-	Metadata        map[string]any    `json:"metadata,omitempty"`
+	Model           string         `json:"model"`
+	Input           EmbeddingInput `json:"input"`
+	EncodingFormat  string         `json:"encoding_format,omitempty"`
+	OutputDimension *int           `json:"output_dimension,omitempty"`
+	OutputDType     string         `json:"output_dtype,omitempty"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
 }
 
 // EmbeddingData is one vector in an embeddings response.
@@ -192,7 +192,7 @@ func decodeBase64Float32s(encoded string) ([]float32, error) {
 	}
 	n := len(raw) / 4
 	out := make([]float32, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		bits := binary.LittleEndian.Uint32(raw[i*4 : (i+1)*4])
 		out[i] = math.Float32frombits(bits)
 	}

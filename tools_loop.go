@@ -41,7 +41,7 @@ func ChatCompletionWithTools(
 		return ChatCompletionResponse{}, err
 	}
 
-	for round := 0; round < maxRounds; round++ {
+	for range maxRounds {
 		choice, err := resp.FirstChoice()
 		if err != nil {
 			return ChatCompletionResponse{}, err
