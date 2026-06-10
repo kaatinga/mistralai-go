@@ -1,5 +1,7 @@
 package mistralai
 
+import "encoding/json"
+
 // API DTOs aligned with https://github.com/mistralai/platform-docs-public OpenAPI.
 
 type uploadFileResponse struct {
@@ -64,10 +66,13 @@ type fileDocument struct {
 }
 
 type apiErrorResponse struct {
-	Object  string `json:"object"`
-	Message string `json:"message"`
-	Type    string `json:"type"`
-	Code    any    `json:"code"`
+	Object string `json:"object"`
+	// Message is usually a string, but validation errors may nest a detail list.
+	Message json.RawMessage `json:"message"`
+	Type    string          `json:"type"`
+	Code    any             `json:"code"`
+	// Detail carries FastAPI-style validation errors on 422 responses.
+	Detail json.RawMessage `json:"detail"`
 }
 
 // OCRPage is one page from a Mistral OCR response.

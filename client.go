@@ -189,7 +189,7 @@ func (c *client) DeleteFile(ctx context.Context, fileID string) error {
 	if strings.TrimSpace(fileID) == "" {
 		return errors.New("mistral: file id is required")
 	}
-	return c.doJSON(ctx, http.MethodDelete, "/v1/files/"+url.PathEscape(fileID), nil, nil)
+	return c.doJSON(ctx, http.MethodDelete, "/v1/files/"+url.PathEscape(fileID), nil, nil, nil)
 }
 
 func (r OCRRequest) validate() error {

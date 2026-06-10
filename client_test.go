@@ -140,7 +140,7 @@ func TestDeleteFile(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(apiErrorResponse{
 				Object:  "error",
-				Message: "file not found",
+				Message: json.RawMessage(`"file not found"`),
 				Type:    "invalid_request_error",
 			})
 		}))
@@ -184,7 +184,7 @@ func TestOCR_apiError(t *testing.T) {
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(apiErrorResponse{
 				Object:  "error",
-				Message: "invalid document",
+				Message: json.RawMessage(`"invalid document"`),
 				Type:    "invalid_request_error",
 				Code:    "1100",
 			})

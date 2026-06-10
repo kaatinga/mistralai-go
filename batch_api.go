@@ -199,12 +199,8 @@ func (c *client) CreateBatchJob(ctx context.Context, req CreateBatchJobRequest) 
 
 // ListBatchJobs lists batch jobs for the API key (GET /v1/batch/jobs).
 func (c *client) ListBatchJobs(ctx context.Context, req ListBatchJobsRequest) (BatchJobList, error) {
-	endpoint := "/v1/batch/jobs"
-	if q := req.queryValues(); len(q) > 0 {
-		endpoint += "?" + q.Encode()
-	}
 	var list BatchJobList
-	if err := c.getJSON(ctx, endpoint, &list); err != nil {
+	if err := c.getJSON(ctx, "/v1/batch/jobs", req.queryValues(), &list); err != nil {
 		return BatchJobList{}, fmt.Errorf("mistral: list batch jobs: %w", err)
 	}
 	return list, nil
@@ -216,7 +212,7 @@ func (c *client) GetBatchJob(ctx context.Context, jobID string) (BatchJob, error
 		return BatchJob{}, errors.New("mistral: job id is required")
 	}
 	var job BatchJob
-	if err := c.getJSON(ctx, "/v1/batch/jobs/"+url.PathEscape(jobID), &job); err != nil {
+	if err := c.getJSON(ctx, "/v1/batch/jobs/"+url.PathEscape(jobID), nil, &job); err != nil {
 		return BatchJob{}, fmt.Errorf("mistral: get batch job: %w", err)
 	}
 	return job, nil

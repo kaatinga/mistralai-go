@@ -21,7 +21,7 @@ Synchronous Go client for the [Mistral API](https://docs.mistral.ai/api). Each c
 | `GetBatchJob` | `GET /v1/batch/jobs/{job_id}` | Fetch one batch job |
 | `CancelBatchJob` | `POST /v1/batch/jobs/{job_id}/cancel` | Request cancellation of a batch job |
 
-JSON API calls (`Chat`, `ChatCompletion`, `Embeddings`, `ListModels`, `ListFiles`, `DeleteFile`, `DownloadFile`, the batch job calls, OCR after upload) retry on **429** and **5xx** with exponential backoff (default **5** attempts, context-aware). Configure with `WithMaxRetries`.
+All API calls (including file uploads) retry on **429** and **5xx** with jittered exponential backoff, honoring the `Retry-After` response header (default **5** attempts, context-aware). Configure with `WithMaxRetries`.
 
 ## Install
 
@@ -368,4 +368,4 @@ MISTRAL_API_KEY=... go test -tags=mistral_test ./...
 
 ## License
 
-See repository for license terms.
+[MIT](LICENSE)

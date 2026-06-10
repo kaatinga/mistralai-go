@@ -47,11 +47,64 @@ func apiError(status int, body []byte) *APIError {
 	e := &APIError{StatusCode: status, Body: body}
 	var parsed apiErrorResponse
 	if err := json.Unmarshal(body, &parsed); err == nil {
-		e.Message = parsed.Message
+		e.Message = parsed.messageText()
 		e.Type = parsed.Type
 		if parsed.Code != nil {
 			e.Code = fmt.Sprintf("%v", parsed.Code)
 		}
 	}
 	return e
+}
+
+// messageText extracts a human-readable message. Mistral uses two shapes:
+// {"message": "..."} and validation errors as {"detail": [{"loc":..., "msg":...}]}
+// (sometimes nested under "message").
+func (r apiErrorResponse) messageText() string {
+	if len(r.Message) > 0 {
+		var s string
+		if err := json.Unmarshal(r.Message, &s); err == nil {
+			return s
+		}
+		var nested struct {
+			Detail json.RawMessage `json:"detail"`
+		}
+		if err := json.Unmarshal(r.Message, &nested); err == nil {
+			if msg := detailText(nested.Detail); msg != "" {
+				return msg
+			}
+		}
+	}
+	return detailText(r.Detail)
+}
+
+func detailText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var items []struct {
+		Loc []any  `json:"loc"`
+		Msg string `json:"msg"`
+	}
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return ""
+	}
+	parts := make([]string, 0, len(items))
+	for _, it := range items {
+		msg := it.Msg
+		if len(it.Loc) > 0 {
+			locs := make([]string, len(it.Loc))
+			for i, l := range it.Loc {
+				locs[i] = fmt.Sprintf("%v", l)
+			}
+			msg = strings.Join(locs, ".") + ": " + msg
+		}
+		if msg != "" {
+			parts = append(parts, msg)
+		}
+	}
+	return strings.Join(parts, "; ")
 }
