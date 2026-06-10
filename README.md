@@ -183,6 +183,24 @@ For batch jobs on `/v1/embeddings`, use `EmbeddingEntry` and `ParseBatchResults[
 - `WithMaxRetries` — retries after the initial attempt for retryable status codes (default **4**, i.e. 5 attempts total; `0` disables retries).
 - `WithBaseURL` — override API origin (tests or proxies).
 
+### Mocking and dependency inversion
+
+`NewClient` returns a concrete `*Client` (not an interface) so new endpoints can be
+added without breaking your code. For testing or dependency inversion, define a
+narrow interface in your own package with just the methods you use — `*Client`
+satisfies it implicitly:
+
+```go
+type ocrClient interface {
+	OCR(ctx context.Context, req mistralai.OCRRequest) (mistralai.OCRResponse, error)
+}
+```
+
+Package helpers accept small role interfaces, all satisfied by `*Client`:
+`ChatCompletionWithTools` and `ChatStructured[T]` take a `ChatCompleter`,
+`WaitForBatchJob` takes a `BatchJobGetter`, and `OCRStructured[T]` takes an
+`OCRRunner` — so you can drive them with a fake in tests.
+
 ### JSON output with `Chat`
 
 ```go
