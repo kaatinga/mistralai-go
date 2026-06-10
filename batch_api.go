@@ -175,7 +175,7 @@ func (r ListBatchJobsRequest) queryValues() url.Values {
 }
 
 // CreateBatchJob creates an async batch job (POST /v1/batch/jobs).
-func (c *client) CreateBatchJob(ctx context.Context, req CreateBatchJobRequest) (BatchJob, error) {
+func (c *Client) CreateBatchJob(ctx context.Context, req CreateBatchJobRequest) (BatchJob, error) {
 	if err := req.validate(); err != nil {
 		return BatchJob{}, err
 	}
@@ -198,7 +198,7 @@ func (c *client) CreateBatchJob(ctx context.Context, req CreateBatchJobRequest) 
 }
 
 // ListBatchJobs lists batch jobs for the API key (GET /v1/batch/jobs).
-func (c *client) ListBatchJobs(ctx context.Context, req ListBatchJobsRequest) (BatchJobList, error) {
+func (c *Client) ListBatchJobs(ctx context.Context, req ListBatchJobsRequest) (BatchJobList, error) {
 	var list BatchJobList
 	if err := c.getJSON(ctx, "/v1/batch/jobs", req.queryValues(), &list); err != nil {
 		return BatchJobList{}, fmt.Errorf("mistral: list batch jobs: %w", err)
@@ -207,7 +207,7 @@ func (c *client) ListBatchJobs(ctx context.Context, req ListBatchJobsRequest) (B
 }
 
 // GetBatchJob fetches one batch job (GET /v1/batch/jobs/{job_id}).
-func (c *client) GetBatchJob(ctx context.Context, jobID string) (BatchJob, error) {
+func (c *Client) GetBatchJob(ctx context.Context, jobID string) (BatchJob, error) {
 	if strings.TrimSpace(jobID) == "" {
 		return BatchJob{}, errors.New("mistral: job id is required")
 	}
@@ -219,7 +219,7 @@ func (c *client) GetBatchJob(ctx context.Context, jobID string) (BatchJob, error
 }
 
 // CancelBatchJob requests cancellation (POST /v1/batch/jobs/{job_id}/cancel).
-func (c *client) CancelBatchJob(ctx context.Context, jobID string) (BatchJob, error) {
+func (c *Client) CancelBatchJob(ctx context.Context, jobID string) (BatchJob, error) {
 	if strings.TrimSpace(jobID) == "" {
 		return BatchJob{}, errors.New("mistral: job id is required")
 	}
@@ -237,7 +237,7 @@ func (c *client) CancelBatchJob(ctx context.Context, jobID string) (BatchJob, er
 //
 // A terminal-but-failed job (FAILED, TIMEOUT_EXCEEDED) is returned without a Go
 // error; inspect BatchJob.Errors and download BatchJob.ErrorFile to handle it.
-func WaitForBatchJob(ctx context.Context, c Client, jobID string, pollInterval time.Duration) (BatchJob, error) {
+func WaitForBatchJob(ctx context.Context, c BatchJobGetter, jobID string, pollInterval time.Duration) (BatchJob, error) {
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second
 	}

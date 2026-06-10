@@ -74,7 +74,7 @@ func (r ListFilesRequest) queryValues() url.Values {
 }
 
 // ListFiles returns files for the API key (GET /v1/files).
-func (c *client) ListFiles(ctx context.Context, req ListFilesRequest) (FileList, error) {
+func (c *Client) ListFiles(ctx context.Context, req ListFilesRequest) (FileList, error) {
 	var list FileList
 	if err := c.getJSON(ctx, "/v1/files", req.queryValues(), &list); err != nil {
 		return FileList{}, fmt.Errorf("mistral: list files: %w", err)

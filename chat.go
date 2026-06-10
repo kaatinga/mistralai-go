@@ -62,7 +62,9 @@ func (r ChatResponse) JSON(dest any) error {
 	return nil
 }
 
-func (c *client) Chat(ctx context.Context, req ChatRequest) (ChatResponse, error) {
+// Chat runs POST /v1/chat/completions with a single user turn and optional
+// system prompt and output format helpers (see ChatRequest).
+func (c *Client) Chat(ctx context.Context, req ChatRequest) (ChatResponse, error) {
 	if err := req.validate(); err != nil {
 		return ChatResponse{}, err
 	}
@@ -85,7 +87,7 @@ func (r ChatRequest) validate() error {
 	}
 }
 
-func (c *client) processChat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+func (c *Client) processChat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	format := req.Format
 	if format == "" {
 		format = OutputText

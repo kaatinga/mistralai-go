@@ -90,9 +90,29 @@ func OCREntry(customID, model, fileID string, opts ...OCREntryOption) BatchEntry
 	}
 	body := ocrRequestBody{
 		Model: model,
-		Document: fileDocument{
+		Document: ocrDocument{
 			Type:   documentTypeFile,
 			FileID: fileID,
+		},
+	}
+	for _, opt := range opts {
+		opt(&body)
+	}
+	return BatchEntry{CustomID: customID, Body: body}
+}
+
+// OCRURLEntry builds a batch entry for the /v1/ocr endpoint that references a
+// document by URL instead of an uploaded file id. model defaults to
+// DefaultOCRModel when empty.
+func OCRURLEntry(customID, model, documentURL string, opts ...OCREntryOption) BatchEntry {
+	if model == "" {
+		model = DefaultOCRModel
+	}
+	body := ocrRequestBody{
+		Model: model,
+		Document: ocrDocument{
+			Type:        documentTypeDocumentURL,
+			DocumentURL: documentURL,
 		},
 	}
 	for _, opt := range opts {
@@ -132,7 +152,7 @@ func BuildBatchInputJSONL(entries []BatchEntry) ([]byte, error) {
 
 // UploadBatchInput builds a JSONL input file from entries and uploads it with
 // purpose "batch", returning the file id for CreateBatchJobRequest.InputFiles.
-func (c *client) UploadBatchInput(ctx context.Context, filename string, entries []BatchEntry) (string, error) {
+func (c *Client) UploadBatchInput(ctx context.Context, filename string, entries []BatchEntry) (string, error) {
 	if strings.TrimSpace(filename) == "" {
 		return "", errors.New("mistral: filename is required")
 	}

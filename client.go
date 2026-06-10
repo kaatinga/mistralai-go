@@ -15,47 +15,49 @@ const (
 	// DefaultBaseURL is the Mistral cloud API origin.
 	DefaultBaseURL = "https://api.mistral.ai"
 	// DefaultOCRModel is used when OCRRequest.Model is empty.
-	DefaultOCRModel  = "mistral-ocr-latest"
-	filePurposeOCR   = "ocr"
-	documentTypeFile = "file"
+	DefaultOCRModel         = "mistral-ocr-latest"
+	filePurposeOCR          = "ocr"
+	documentTypeFile        = "file"
+	documentTypeDocumentURL = "document_url"
+	documentTypeImageURL    = "image_url"
 )
 
-// Client is the port for Mistral cloud API access (dependency inversion).
-type Client interface {
-	// OCR uploads the document via POST /v1/files, then POST /v1/ocr; blocks until 200 or error.
-	OCR(ctx context.Context, req OCRRequest) (OCRResponse, error)
-	// OCRByFileID runs POST /v1/ocr for an already-uploaded file id (no auto-delete).
-	OCRByFileID(ctx context.Context, fileID string, model string) (OCRResponse, error)
-	// Chat runs POST /v1/chat/completions with a single user turn; blocks until 200 or error.
-	Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
-	// ChatCompletion runs POST /v1/chat/completions with full message control.
+// Client is a synchronous HTTP client for the Mistral API. Construct it with
+// NewClient. Methods are safe for concurrent use.
+//
+// Client is intentionally a concrete struct, not an interface, so new API
+// endpoints can be added without breaking consumers. For dependency inversion
+// or mocking, define a narrow interface with just the methods you use:
+//
+//	type ocrClient interface {
+//		OCR(ctx context.Context, req mistralai.OCRRequest) (mistralai.OCRResponse, error)
+//	}
+//
+// Helpers in this package that take a client accept such role interfaces
+// (ChatCompleter, BatchJobGetter, OCRRunner), all satisfied by *Client.
+type Client struct {
+	apiKey      string
+	baseURL     string
+	http        *http.Client
+	maxAttempts int
+}
+
+// ChatCompleter runs chat completions; satisfied by *Client. It is the
+// dependency of ChatCompletionWithTools and ChatStructured.
+type ChatCompleter interface {
 	ChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error)
-	// Embeddings runs POST /v1/embeddings.
-	Embeddings(ctx context.Context, req EmbeddingRequest) (EmbeddingResponse, error)
-	// ListModels returns models available to the API key (GET /v1/models).
-	ListModels(ctx context.Context) (ModelList, error)
-	// UploadFile uploads file bytes and returns the API file id.
-	UploadFile(ctx context.Context, req UploadFileRequest) (string, error)
-	// ListFiles returns uploaded files for the API key (GET /v1/files).
-	ListFiles(ctx context.Context, req ListFilesRequest) (FileList, error)
-	// DeleteFile removes an uploaded file (DELETE /v1/files/{file_id}).
-	DeleteFile(ctx context.Context, fileID string) error
-	// DownloadFile downloads raw file content (GET /v1/files/{file_id}/content),
-	// e.g. a batch job's output or error JSONL file.
-	DownloadFile(ctx context.Context, fileID string) ([]byte, error)
-	// UploadBatchInput builds a JSONL input file from entries and uploads it with
-	// purpose "batch"; returns the file id for CreateBatchJobRequest.InputFiles.
-	UploadBatchInput(ctx context.Context, filename string, entries []BatchEntry) (string, error)
-	// CreateBatchJob creates an async batch job (POST /v1/batch/jobs).
-	CreateBatchJob(ctx context.Context, req CreateBatchJobRequest) (BatchJob, error)
-	// ListBatchJobs lists batch jobs for the API key (GET /v1/batch/jobs).
-	ListBatchJobs(ctx context.Context, req ListBatchJobsRequest) (BatchJobList, error)
-	// GetBatchJob fetches one batch job (GET /v1/batch/jobs/{job_id}).
+}
+
+// BatchJobGetter fetches batch jobs; satisfied by *Client. It is the
+// dependency of WaitForBatchJob.
+type BatchJobGetter interface {
 	GetBatchJob(ctx context.Context, jobID string) (BatchJob, error)
-	// CancelBatchJob requests cancellation (POST /v1/batch/jobs/{job_id}/cancel).
-	CancelBatchJob(ctx context.Context, jobID string) (BatchJob, error)
-	// Close releases resources. Safe to call more than once.
-	Close() error
+}
+
+// OCRRunner runs upload-based OCR; satisfied by *Client. It is the
+// dependency of OCRStructured.
+type OCRRunner interface {
+	OCR(ctx context.Context, req OCRRequest) (OCRResponse, error)
 }
 
 // OCRRequest describes a document to OCR via file upload (not a URL).
@@ -99,7 +101,7 @@ type ClientOption func(*clientOptions)
 type clientOptions struct {
 	baseURL    string
 	httpClient *http.Client
-	maxRetries int
+	maxRetries *int
 }
 
 // WithBaseURL overrides DefaultBaseURL (for tests).
@@ -112,21 +114,17 @@ func WithHTTPClient(httpClient *http.Client) ClientOption {
 	return func(o *clientOptions) { o.httpClient = httpClient }
 }
 
-// WithMaxRetries sets retry attempts for retryable HTTP status codes (default 5).
+// WithMaxRetries sets how many times a failed request is retried after the
+// initial attempt, for retryable failures (429/5xx and transport errors).
+// 0 disables retries; negative values are treated as 0. Default is 4 retries
+// (5 attempts in total).
 func WithMaxRetries(n int) ClientOption {
-	return func(o *clientOptions) { o.maxRetries = n }
-}
-
-type client struct {
-	apiKey     string
-	baseURL    string
-	http       *http.Client
-	maxRetries int
+	return func(o *clientOptions) { o.maxRetries = new(max(n, 0)) }
 }
 
 // NewClient returns a synchronous HTTP client for the Mistral API.
 // apiKey is required; an empty key returns an error.
-func NewClient(apiKey string, opts ...ClientOption) (Client, error) {
+func NewClient(apiKey string, opts ...ClientOption) (*Client, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		return nil, errors.New("mistral: API key is required")
@@ -143,24 +141,27 @@ func NewClient(apiKey string, opts ...ClientOption) (Client, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 10 * time.Minute}
 	}
-	maxRetries := o.maxRetries
-	if maxRetries <= 0 {
-		maxRetries = defaultMaxRetries
+	maxAttempts := defaultMaxAttempts
+	if o.maxRetries != nil {
+		maxAttempts = *o.maxRetries + 1
 	}
 
-	return &client{
-		apiKey:     apiKey,
-		baseURL:    baseURL,
-		http:       httpClient,
-		maxRetries: maxRetries,
+	return &Client{
+		apiKey:      apiKey,
+		baseURL:     baseURL,
+		http:        httpClient,
+		maxAttempts: maxAttempts,
 	}, nil
 }
 
-func (c *client) Close() error {
+// Close releases resources. Safe to call more than once.
+func (c *Client) Close() error {
 	return nil
 }
 
-func (c *client) OCR(ctx context.Context, req OCRRequest) (OCRResponse, error) {
+// OCR uploads the document via POST /v1/files, then runs POST /v1/ocr on the
+// uploaded file id; the file is deleted afterwards (best effort).
+func (c *Client) OCR(ctx context.Context, req OCRRequest) (OCRResponse, error) {
 	if err := req.validate(); err != nil {
 		return OCRResponse{}, err
 	}
@@ -171,7 +172,9 @@ func (c *client) OCR(ctx context.Context, req OCRRequest) (OCRResponse, error) {
 	return *resp, nil
 }
 
-func (c *client) UploadFile(ctx context.Context, req UploadFileRequest) (string, error) {
+// UploadFile uploads file bytes (POST /v1/files) and returns the API file id.
+// Purpose defaults to "ocr".
+func (c *Client) UploadFile(ctx context.Context, req UploadFileRequest) (string, error) {
 	if strings.TrimSpace(req.Filename) == "" {
 		return "", errors.New("mistral: filename is required")
 	}
@@ -185,7 +188,8 @@ func (c *client) UploadFile(ctx context.Context, req UploadFileRequest) (string,
 	return c.uploadFile(ctx, req.Filename, req.Content, req.ContentType, purpose)
 }
 
-func (c *client) DeleteFile(ctx context.Context, fileID string) error {
+// DeleteFile removes an uploaded file (DELETE /v1/files/{file_id}).
+func (c *Client) DeleteFile(ctx context.Context, fileID string) error {
 	if strings.TrimSpace(fileID) == "" {
 		return errors.New("mistral: file id is required")
 	}
@@ -205,7 +209,7 @@ func (r OCRRequest) validate() error {
 	return nil
 }
 
-func (c *client) processOCR(ctx context.Context, req OCRRequest) (*OCRResponse, error) {
+func (c *Client) processOCR(ctx context.Context, req OCRRequest) (*OCRResponse, error) {
 	fileID, err := c.uploadFile(ctx, req.Filename, req.Content, req.ContentType, filePurposeOCR)
 	if err != nil {
 		return nil, fmt.Errorf("mistral: upload file: %w", err)
@@ -223,7 +227,7 @@ func (c *client) processOCR(ctx context.Context, req OCRRequest) (*OCRResponse, 
 
 	body := ocrRequestBody{
 		Model: model,
-		Document: fileDocument{
+		Document: ocrDocument{
 			Type:   documentTypeFile,
 			FileID: fileID,
 		},

@@ -18,9 +18,11 @@ import (
 )
 
 const (
-	defaultMaxRetries = 5
-	retryInitialDelay = time.Second
-	retryMaxDelay     = time.Minute
+	// defaultMaxAttempts is the total number of tries per request: the initial
+	// attempt plus 4 default retries.
+	defaultMaxAttempts = 5
+	retryInitialDelay  = time.Second
+	retryMaxDelay      = time.Minute
 )
 
 func isRetryStatusCode(code int) bool {
@@ -38,7 +40,7 @@ func isSuccessStatusCode(code int) bool {
 // endpointURL joins the API origin with a cleaned endpoint path and an optional
 // query string. The query is appended after cleaning so its values are never
 // path-mangled.
-func (c *client) endpointURL(endpoint string, query url.Values) string {
+func (c *Client) endpointURL(endpoint string, query url.Values) string {
 	u := c.baseURL + path.Clean("/"+endpoint)
 	if len(query) > 0 {
 		u += "?" + query.Encode()
@@ -76,11 +78,11 @@ func jittered(d time.Duration) time.Duration {
 // retrying 429/5xx and transport errors with exponential backoff (jittered,
 // honoring Retry-After, capped at retryMaxDelay). Authorization and User-Agent
 // headers are set here. It returns the response body of a 2xx response.
-func (c *client) doRetry(ctx context.Context, makeReq func() (*http.Request, error)) ([]byte, error) {
+func (c *Client) doRetry(ctx context.Context, makeReq func() (*http.Request, error)) ([]byte, error) {
 	delay := retryInitialDelay
 	var lastErr error
 
-	for attempt := 0; attempt < c.maxRetries; attempt++ {
+	for attempt := 0; attempt < c.maxAttempts; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
@@ -129,7 +131,7 @@ func (c *client) doRetry(ctx context.Context, makeReq func() (*http.Request, err
 	return nil, lastErr
 }
 
-func (c *client) doJSON(ctx context.Context, method, endpoint string, query url.Values, payload, dest any) error {
+func (c *Client) doJSON(ctx context.Context, method, endpoint string, query url.Values, payload, dest any) error {
 	var payloadBytes []byte
 	if payload != nil {
 		var err error
@@ -166,25 +168,25 @@ func (c *client) doJSON(ctx context.Context, method, endpoint string, query url.
 	return nil
 }
 
-func (c *client) postJSON(ctx context.Context, endpoint string, payload, dest any) error {
+func (c *Client) postJSON(ctx context.Context, endpoint string, payload, dest any) error {
 	return c.doJSON(ctx, http.MethodPost, endpoint, nil, payload, dest)
 }
 
-func (c *client) getJSON(ctx context.Context, endpoint string, query url.Values, dest any) error {
+func (c *Client) getJSON(ctx context.Context, endpoint string, query url.Values, dest any) error {
 	return c.doJSON(ctx, http.MethodGet, endpoint, query, nil, dest)
 }
 
 // getRaw issues a GET and returns the raw 2xx response body without
 // unmarshaling, for endpoints returning non-JSON-object payloads (e.g. JSONL
 // file content). It shares doRetry's retry-on-429/5xx behavior.
-func (c *client) getRaw(ctx context.Context, endpoint string) ([]byte, error) {
+func (c *Client) getRaw(ctx context.Context, endpoint string) ([]byte, error) {
 	u := c.endpointURL(endpoint, nil)
 	return c.doRetry(ctx, func() (*http.Request, error) {
 		return http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	})
 }
 
-func (c *client) uploadFile(ctx context.Context, filename string, content io.Reader, contentType, purpose string) (string, error) {
+func (c *Client) uploadFile(ctx context.Context, filename string, content io.Reader, contentType, purpose string) (string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 

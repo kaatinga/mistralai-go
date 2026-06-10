@@ -9,7 +9,7 @@ import (
 
 // OCRByFileID runs POST /v1/ocr for a file already uploaded via UploadFile.
 // The caller is responsible for deleting the file when finished.
-func (c *client) OCRByFileID(ctx context.Context, fileID string, model string) (OCRResponse, error) {
+func (c *Client) OCRByFileID(ctx context.Context, fileID string, model string) (OCRResponse, error) {
 	fileID = strings.TrimSpace(fileID)
 	if fileID == "" {
 		return OCRResponse{}, errors.New("mistral: file id is required")
@@ -19,7 +19,7 @@ func (c *client) OCRByFileID(ctx context.Context, fileID string, model string) (
 	}
 	body := ocrRequestBody{
 		Model: model,
-		Document: fileDocument{
+		Document: ocrDocument{
 			Type:   documentTypeFile,
 			FileID: fileID,
 		},

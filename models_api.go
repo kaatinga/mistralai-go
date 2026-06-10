@@ -20,7 +20,7 @@ type ModelList struct {
 }
 
 // ListModels returns models available to the API key (GET /v1/models).
-func (c *client) ListModels(ctx context.Context) (ModelList, error) {
+func (c *Client) ListModels(ctx context.Context) (ModelList, error) {
 	var list ModelList
 	if err := c.getJSON(ctx, "/v1/models", nil, &list); err != nil {
 		return ModelList{}, fmt.Errorf("mistral: list models: %w", err)

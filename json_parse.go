@@ -30,7 +30,7 @@ func DocumentAnnotationInto[T any](r OCRResponse) (T, error) {
 }
 
 // OCRStructured runs OCR and unmarshals document_annotation into T.
-func OCRStructured[T any](ctx context.Context, c Client, req OCRRequest) (T, OCRResponse, error) {
+func OCRStructured[T any](ctx context.Context, c OCRRunner, req OCRRequest) (T, OCRResponse, error) {
 	var zero T
 	resp, err := c.OCR(ctx, req)
 	if err != nil {
@@ -41,7 +41,7 @@ func OCRStructured[T any](ctx context.Context, c Client, req OCRRequest) (T, OCR
 }
 
 // ChatStructured runs ChatCompletion and unmarshals the first choice content into T.
-func ChatStructured[T any](ctx context.Context, c Client, req ChatCompletionRequest) (T, ChatCompletionResponse, error) {
+func ChatStructured[T any](ctx context.Context, c ChatCompleter, req ChatCompletionRequest) (T, ChatCompletionResponse, error) {
 	var zero T
 	resp, err := c.ChatCompletion(ctx, req)
 	if err != nil {

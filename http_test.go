@@ -55,6 +55,35 @@ func TestUploadFile_retriesOn429(t *testing.T) {
 	}
 }
 
+func TestWithMaxRetries_countsRetriesNotAttempts(t *testing.T) {
+	run := func(t *testing.T, retries, wantAttempts int) {
+		t.Helper()
+		var attempts int
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attempts++
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer srv.Close()
+
+		cl, err := NewClient("k", WithBaseURL(srv.URL), WithMaxRetries(retries))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cl.Close()
+
+		if _, err := cl.ListModels(context.Background()); err == nil {
+			t.Fatal("expected error")
+		}
+		if attempts != wantAttempts {
+			t.Fatalf("attempts = %d want %d", attempts, wantAttempts)
+		}
+	}
+
+	t.Run("zero_disables_retries", func(t *testing.T) { run(t, 0, 1) })
+	t.Run("one_retry_two_attempts", func(t *testing.T) { run(t, 1, 2) })
+	t.Run("negative_treated_as_zero", func(t *testing.T) { run(t, -3, 1) })
+}
+
 func TestDoRetry_acceptsNon200Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

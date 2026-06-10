@@ -22,7 +22,7 @@ type ToolHandler func(ctx context.Context, call ToolCall) (content string, err e
 // usually sufficient for chained tool use.
 func ChatCompletionWithTools(
 	ctx context.Context,
-	c Client,
+	c ChatCompleter,
 	req ChatCompletionRequest,
 	handler ToolHandler,
 	maxRounds int,

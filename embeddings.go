@@ -167,7 +167,8 @@ func (r EmbeddingRequest) validate() error {
 	return nil
 }
 
-func (c *client) Embeddings(ctx context.Context, req EmbeddingRequest) (EmbeddingResponse, error) {
+// Embeddings runs POST /v1/embeddings. Model defaults to DefaultEmbeddingModel.
+func (c *Client) Embeddings(ctx context.Context, req EmbeddingRequest) (EmbeddingResponse, error) {
 	if req.Model == "" {
 		req.Model = DefaultEmbeddingModel
 	}

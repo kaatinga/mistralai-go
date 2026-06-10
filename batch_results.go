@@ -40,7 +40,7 @@ type batchResultLine struct {
 // DownloadFile downloads raw file content (GET /v1/files/{file_id}/content).
 // Use it to fetch a batch job's OutputFile or ErrorFile, then parse the bytes
 // with ParseBatchResults.
-func (c *client) DownloadFile(ctx context.Context, fileID string) ([]byte, error) {
+func (c *Client) DownloadFile(ctx context.Context, fileID string) ([]byte, error) {
 	if strings.TrimSpace(fileID) == "" {
 		return nil, errors.New("mistral: file id is required")
 	}

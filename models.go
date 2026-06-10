@@ -14,7 +14,7 @@ type uploadFileResponse struct {
 
 type ocrRequestBody struct {
 	Model                    string          `json:"model"`
-	Document                 fileDocument    `json:"document"`
+	Document                 ocrDocument     `json:"document"`
 	Pages                    []int           `json:"pages,omitempty"`
 	ID                       string          `json:"id,omitempty"`
 	TableFmt                 string          `json:"table_format,omitempty"`
@@ -60,9 +60,14 @@ type JSONSchema struct {
 	Strict      bool           `json:"strict,omitempty"`
 }
 
-type fileDocument struct {
-	Type   string `json:"type"`
-	FileID string `json:"file_id"`
+// ocrDocument is the OCR request "document" union: a file chunk (file_id),
+// a document_url chunk, or an image_url chunk, discriminated by Type.
+type ocrDocument struct {
+	Type         string `json:"type"`
+	FileID       string `json:"file_id,omitempty"`
+	DocumentURL  string `json:"document_url,omitempty"`
+	DocumentName string `json:"document_name,omitempty"`
+	ImageURL     string `json:"image_url,omitempty"`
 }
 
 type apiErrorResponse struct {

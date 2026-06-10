@@ -6,7 +6,9 @@ Synchronous Go client for the [Mistral API](https://docs.mistral.ai/api). Each c
 
 | Method | HTTP | Use when |
 |--------|------|----------|
-| `OCR` | `POST /v1/files`, then `POST /v1/ocr` | Document OCR via file upload |
+| `OCR` | `POST /v1/files`, then `POST /v1/ocr` | Document OCR via file upload (auto-deletes the file afterwards) |
+| `OCRByFileID` | `POST /v1/ocr` | OCR an already-uploaded file by id (no auto-delete) |
+| `OCRByURL` | `POST /v1/ocr` | OCR a document or image referenced by URL (`document_url` / `image_url`, incl. `data:` URIs) — no upload round-trip |
 | `Chat` | `POST /v1/chat/completions` | Single user turn with optional system prompt and output format helpers |
 | `ChatCompletion` | `POST /v1/chat/completions` | Full control: message list, temperature, `response_format`, etc. |
 | `Embeddings` | `POST /v1/embeddings` | Text embeddings (`mistral-embed`, batch input, optional dimensions/dtype) |
@@ -21,7 +23,7 @@ Synchronous Go client for the [Mistral API](https://docs.mistral.ai/api). Each c
 | `GetBatchJob` | `GET /v1/batch/jobs/{job_id}` | Fetch one batch job |
 | `CancelBatchJob` | `POST /v1/batch/jobs/{job_id}/cancel` | Request cancellation of a batch job |
 
-All API calls (including file uploads) retry on **429** and **5xx** with jittered exponential backoff, honoring the `Retry-After` response header (default **5** attempts, context-aware). Configure with `WithMaxRetries`.
+All API calls (including file uploads) retry on **429** and **5xx** with jittered exponential backoff, honoring the `Retry-After` response header (default **4** retries / 5 attempts total, context-aware). Configure with `WithMaxRetries`; `WithMaxRetries(0)` disables retries.
 
 ## Install
 
@@ -107,7 +109,7 @@ func main() {
 ### High-level `Chat` vs `ChatCompletion`
 
 - **`Chat`** builds a short message list from `Input` and optional `System`, and can request text, markdown, or JSON output via `Format` / `ResponseFormat`.
-- **`ChatCompletion`** maps directly to the REST request body: any number of messages, `temperature`, `max_tokens`, `top_p`, `response_format`, and **tool calling** (`tools`, `tool_choice`, `parallel_tool_calls`). Use this for conversation history or app-specific control.
+- **`ChatCompletion`** maps directly to the REST request body: any number of messages, sampling controls (`temperature`, `top_p`, `max_tokens`, `stop`, `random_seed`, `presence_penalty`, `frequency_penalty`, `n`), `response_format`, **tool calling** (`tools`, `tool_choice`, `parallel_tool_calls`), predicted outputs (`prediction`, see `PredictionContent`), prompt caching (`prompt_cache_key`), reasoning (`reasoning_effort`), and `safe_prompt`. Use this for conversation history or app-specific control. The `stream` field is reserved; setting it returns an error until SSE streaming is implemented.
 
 `Chat` is implemented on top of `ChatCompletion` internally.
 
@@ -178,7 +180,7 @@ For batch jobs on `/v1/embeddings`, use `EmbeddingEntry` and `ParseBatchResults[
 ### Client options
 
 - `WithHTTPClient` — custom `http.Client` (default timeout **10 minutes**, suitable for OCR).
-- `WithMaxRetries` — retries for retryable status codes (default **5**).
+- `WithMaxRetries` — retries after the initial attempt for retryable status codes (default **4**, i.e. 5 attempts total; `0` disables retries).
 - `WithBaseURL` — override API origin (tests or proxies).
 
 ### JSON output with `Chat`
@@ -229,7 +231,8 @@ file. It is **not** for latency-sensitive calls — a job completes within its
 Build the input from the same typed request values you already use:
 `ChatCompletionEntry` for `/v1/chat/completions`, `EmbeddingEntry` for
 `/v1/embeddings`, `OCREntry` for `/v1/ocr` (referencing an already-uploaded
-`file_id`), or `Entry(customID, body)` for any other endpoint. Parse results
+`file_id`), `OCRURLEntry` for `/v1/ocr` over a document URL, or
+`Entry(customID, body)` for any other endpoint. Parse results
 back into the matching typed response with `ParseBatchResults[T]`.
 
 ```go
