@@ -28,10 +28,10 @@ func ChatCompletionWithTools(
 	maxRounds int,
 ) (ChatCompletionResponse, error) {
 	if handler == nil {
-		return ChatCompletionResponse{}, fmt.Errorf("mistral: tool handler is required")
+		return ChatCompletionResponse{}, fmt.Errorf("%w: tool handler is required", ErrInvalidRequest)
 	}
 	if maxRounds <= 0 {
-		return ChatCompletionResponse{}, fmt.Errorf("mistral: maxRounds must be positive")
+		return ChatCompletionResponse{}, fmt.Errorf("%w: maxRounds must be positive", ErrInvalidRequest)
 	}
 
 	req.Messages = append([]ChatMessage(nil), req.Messages...)

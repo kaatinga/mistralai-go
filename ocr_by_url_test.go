@@ -122,6 +122,23 @@ func TestOCRByURL_validation(t *testing.T) {
 	}
 }
 
+// A whitespace-only ImageURL alongside DocumentURL must not survive
+// normalization and turn into a blank image_url chunk.
+func TestOCRURLRequest_normalizeBlankImageURL(t *testing.T) {
+	req := OCRURLRequest{DocumentURL: " https://example.com/a.pdf ", ImageURL: " "}
+	req.normalize()
+	if err := req.validate(); err != nil {
+		t.Fatal(err)
+	}
+	doc := req.document()
+	if doc.Type != documentTypeDocumentURL || doc.DocumentURL != "https://example.com/a.pdf" {
+		t.Fatalf("document = %+v", doc)
+	}
+	if doc.ImageURL != "" {
+		t.Fatalf("blank ImageURL leaked into document: %+v", doc)
+	}
+}
+
 func TestOCRURLEntry(t *testing.T) {
 	e := OCRURLEntry("doc-1", "", "https://example.com/a.pdf", WithOCRTableFormat("markdown"))
 	if e.CustomID != "doc-1" {

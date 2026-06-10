@@ -163,7 +163,7 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, query url.
 		return nil
 	}
 	if err = json.Unmarshal(body, dest); err != nil {
-		return fmt.Errorf("decode response: %w", err)
+		return fmt.Errorf("mistral: decode response: %w", err)
 	}
 	return nil
 }
@@ -229,10 +229,10 @@ func (c *Client) uploadFile(ctx context.Context, filename string, content io.Rea
 
 	var uploaded uploadFileResponse
 	if err = json.Unmarshal(body, &uploaded); err != nil {
-		return "", fmt.Errorf("decode upload response: %w", err)
+		return "", fmt.Errorf("mistral: decode upload response: %w", err)
 	}
 	if uploaded.ID == "" {
-		return "", fmt.Errorf("upload response missing file id")
+		return "", fmt.Errorf("mistral: upload response missing file id")
 	}
 	return uploaded.ID, nil
 }

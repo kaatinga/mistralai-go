@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -127,21 +126,21 @@ func OCRURLEntry(customID, model, documentURL string, opts ...OCREntryOption) Ba
 // body is nil.
 func BuildBatchInputJSONL(entries []BatchEntry) ([]byte, error) {
 	if len(entries) == 0 {
-		return nil, errors.New("mistral: at least one batch entry is required")
+		return nil, fmt.Errorf("%w: at least one batch entry is required", ErrInvalidRequest)
 	}
 	seen := make(map[string]struct{}, len(entries))
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf) // Encode appends a newline, yielding valid JSONL
 	for i, e := range entries {
 		if strings.TrimSpace(e.CustomID) == "" {
-			return nil, fmt.Errorf("mistral: batch entry %d: custom_id is required", i)
+			return nil, fmt.Errorf("%w: batch entry %d: custom_id is required", ErrInvalidRequest, i)
 		}
 		if _, dup := seen[e.CustomID]; dup {
-			return nil, fmt.Errorf("mistral: duplicate custom_id %q", e.CustomID)
+			return nil, fmt.Errorf("%w: duplicate custom_id %q", ErrInvalidRequest, e.CustomID)
 		}
 		seen[e.CustomID] = struct{}{}
 		if e.Body == nil {
-			return nil, fmt.Errorf("mistral: batch entry %q: body is required", e.CustomID)
+			return nil, fmt.Errorf("%w: batch entry %q: body is required", ErrInvalidRequest, e.CustomID)
 		}
 		if err := enc.Encode(batchInputLine{CustomID: e.CustomID, Body: e.Body}); err != nil {
 			return nil, fmt.Errorf("mistral: encode batch entry %q: %w", e.CustomID, err)
@@ -154,7 +153,7 @@ func BuildBatchInputJSONL(entries []BatchEntry) ([]byte, error) {
 // purpose "batch", returning the file id for CreateBatchJobRequest.InputFiles.
 func (c *Client) UploadBatchInput(ctx context.Context, filename string, entries []BatchEntry) (string, error) {
 	if strings.TrimSpace(filename) == "" {
-		return "", errors.New("mistral: filename is required")
+		return "", fmt.Errorf("%w: filename is required", ErrInvalidRequest)
 	}
 	jsonl, err := BuildBatchInputJSONL(entries)
 	if err != nil {
@@ -164,6 +163,6 @@ func (c *Client) UploadBatchInput(ctx context.Context, filename string, entries 
 		Filename:    filename,
 		Content:     bytes.NewReader(jsonl),
 		ContentType: "application/jsonl",
-		Purpose:     filePurposeBatch,
+		Purpose:     FilePurposeBatch,
 	})
 }

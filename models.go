@@ -32,7 +32,8 @@ const (
 	ResponseFormatJSONSchema = "json_schema"
 )
 
-// ResponseFormat selects structured OCR output (see Mistral OCR API).
+// ResponseFormat selects structured output for chat completions
+// (ChatCompletionRequest.ResponseFormat) and OCR document annotations.
 type ResponseFormat struct {
 	Type       string      `json:"type"`
 	JSONSchema *JSONSchema `json:"json_schema,omitempty"`

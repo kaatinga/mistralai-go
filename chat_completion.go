@@ -240,13 +240,13 @@ func (r ChatCompletionResponse) FirstChoiceContent() (string, error) {
 // ChatCompletion runs POST /v1/chat/completions with full message control.
 func (c *Client) ChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error) {
 	if strings.TrimSpace(req.Model) == "" {
-		return ChatCompletionResponse{}, fmt.Errorf("mistral: model is required")
+		return ChatCompletionResponse{}, fmt.Errorf("%w: model is required", ErrInvalidRequest)
 	}
 	if len(req.Messages) == 0 {
-		return ChatCompletionResponse{}, fmt.Errorf("mistral: messages are required")
+		return ChatCompletionResponse{}, fmt.Errorf("%w: messages are required", ErrInvalidRequest)
 	}
 	if req.Stream {
-		return ChatCompletionResponse{}, fmt.Errorf("mistral: streaming is not supported yet; leave Stream unset")
+		return ChatCompletionResponse{}, fmt.Errorf("%w: streaming is not supported yet; leave Stream unset", ErrInvalidRequest)
 	}
 
 	var resp ChatCompletionResponse

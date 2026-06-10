@@ -35,7 +35,7 @@ func TestOCR_uploadAndOCR(t *testing.T) {
 			if err := r.ParseMultipartForm(1 << 20); err != nil {
 				t.Fatal(err)
 			}
-			if r.FormValue("purpose") != filePurposeOCR {
+			if r.FormValue("purpose") != FilePurposeOCR {
 				t.Errorf("purpose = %q", r.FormValue("purpose"))
 			}
 			f, hdr, err := r.FormFile("file")
@@ -51,7 +51,7 @@ func TestOCR_uploadAndOCR(t *testing.T) {
 				ID:       wantFileID,
 				Object:   "file",
 				Filename: "doc.pdf",
-				Purpose:  filePurposeOCR,
+				Purpose:  FilePurposeOCR,
 			})
 		case r.URL.Path == "/v1/ocr":
 			if r.Method != http.MethodPost {
@@ -394,7 +394,7 @@ func TestListFiles(t *testing.T) {
 					ID:         "497f6eca-6276-4993-bfeb-53cbbbba6f09",
 					Object:     "file",
 					Filename:   "doc.pdf",
-					Purpose:    filePurposeOCR,
+					Purpose:    FilePurposeOCR,
 					SampleType: "ocr",
 					Source:     "upload",
 				}},
@@ -434,7 +434,7 @@ func TestListFiles(t *testing.T) {
 			if q.Get("include_total") != "false" {
 				t.Errorf("include_total = %q", q.Get("include_total"))
 			}
-			if q.Get("purpose") != filePurposeOCR {
+			if q.Get("purpose") != FilePurposeOCR {
 				t.Errorf("purpose = %q", q.Get("purpose"))
 			}
 			if q.Get("search") != "invoice" {
@@ -463,7 +463,7 @@ func TestListFiles(t *testing.T) {
 			Page:         new(1),
 			PageSize:     new(50),
 			IncludeTotal: new(false),
-			Purpose:      filePurposeOCR,
+			Purpose:      FilePurposeOCR,
 			Search:       "invoice",
 			SampleType:   []string{"instruct", "batch_result"},
 			Source:       []string{"upload"},

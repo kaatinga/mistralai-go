@@ -2,10 +2,17 @@ package mistralai
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 )
+
+// ErrInvalidRequest wraps every client-side (pre-flight) validation error, so
+// callers can detect them with errors.Is(err, ErrInvalidRequest) instead of
+// matching message text. It is never returned for API-side rejections; those
+// surface as *APIError.
+var ErrInvalidRequest = errors.New("mistral: invalid request")
 
 // APIError is returned when the Mistral API responds with a non-200 status.
 // Inspect it with errors.As:
@@ -35,7 +42,7 @@ func (e *APIError) Error() string {
 	if msg == "" {
 		msg = http.StatusText(e.StatusCode)
 	}
-	return fmt.Sprintf("mistral api status %d: %s", e.StatusCode, msg)
+	return fmt.Sprintf("mistral: api status %d: %s", e.StatusCode, msg)
 }
 
 // Retryable reports whether the client retries this status (429 and 5xx).

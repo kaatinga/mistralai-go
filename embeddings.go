@@ -44,7 +44,7 @@ func EmbeddingInputStrings(ss ...string) EmbeddingInput {
 // MarshalJSON encodes a string or []string per the Mistral embeddings API.
 func (in EmbeddingInput) MarshalJSON() ([]byte, error) {
 	if in.value == nil {
-		return nil, errors.New("mistral: embedding input is required")
+		return nil, fmt.Errorf("%w: embedding input is required", ErrInvalidRequest)
 	}
 	return json.Marshal(in.value)
 }
@@ -130,39 +130,26 @@ func (r EmbeddingResponse) Float64Vectors() ([][]float64, error) {
 	return out, nil
 }
 
+// validate checks only structural requirements; enum-like fields such as
+// EncodingFormat and OutputDType are passed through so new server-side values
+// never require an SDK release (see the package doc validation policy).
 func (r EmbeddingRequest) validate() error {
 	if strings.TrimSpace(r.Model) == "" {
-		return errors.New("mistral: model is required")
-	}
-	if r.Input.value == nil {
-		return errors.New("mistral: input is required")
+		return fmt.Errorf("%w: model is required", ErrInvalidRequest)
 	}
 	switch v := r.Input.value.(type) {
 	case string:
 		if strings.TrimSpace(v) == "" {
-			return errors.New("mistral: input is required")
+			return fmt.Errorf("%w: input is required", ErrInvalidRequest)
 		}
 	case []string:
 		if len(v) == 0 {
-			return errors.New("mistral: input is required")
+			return fmt.Errorf("%w: input is required", ErrInvalidRequest)
 		}
-		for i, s := range v {
-			if strings.TrimSpace(s) == "" {
-				return fmt.Errorf("mistral: input[%d] is empty", i)
-			}
-		}
+	case nil:
+		return fmt.Errorf("%w: input is required", ErrInvalidRequest)
 	default:
-		return errors.New("mistral: input must be a string or []string")
-	}
-	if r.EncodingFormat != "" && r.EncodingFormat != EncodingFormatFloat && r.EncodingFormat != EncodingFormatBase64 {
-		return fmt.Errorf("mistral: unsupported encoding_format %q", r.EncodingFormat)
-	}
-	if r.OutputDType != "" {
-		switch r.OutputDType {
-		case OutputDTypeFloat, OutputDTypeInt8, OutputDTypeUint8, OutputDTypeBinary, OutputDTypeUBinary:
-		default:
-			return fmt.Errorf("mistral: unsupported output_dtype %q", r.OutputDType)
-		}
+		return fmt.Errorf("%w: input must be a string or []string", ErrInvalidRequest)
 	}
 	return nil
 }

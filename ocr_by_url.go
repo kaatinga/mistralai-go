@@ -2,7 +2,6 @@ package mistralai
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -34,17 +33,24 @@ type OCRURLRequest struct {
 	DocumentAnnotationFormat *ResponseFormat
 }
 
+// normalize trims the URL fields so validate and document agree on what is set.
+func (r *OCRURLRequest) normalize() {
+	r.DocumentURL = strings.TrimSpace(r.DocumentURL)
+	r.ImageURL = strings.TrimSpace(r.ImageURL)
+	r.DocumentName = strings.TrimSpace(r.DocumentName)
+}
+
 func (r OCRURLRequest) validate() error {
-	hasDocument := strings.TrimSpace(r.DocumentURL) != ""
-	hasImage := strings.TrimSpace(r.ImageURL) != ""
+	hasDocument := r.DocumentURL != ""
+	hasImage := r.ImageURL != ""
 	if hasDocument == hasImage {
-		return errors.New("mistral: exactly one of DocumentURL or ImageURL is required")
+		return fmt.Errorf("%w: exactly one of DocumentURL or ImageURL is required", ErrInvalidRequest)
 	}
 	if r.DocumentName != "" && !hasDocument {
-		return errors.New("mistral: DocumentName requires DocumentURL")
+		return fmt.Errorf("%w: DocumentName requires DocumentURL", ErrInvalidRequest)
 	}
 	if r.DocumentAnnotationPrompt != "" && r.DocumentAnnotationFormat == nil {
-		return errors.New("mistral: document_annotation_format is required with document_annotation_prompt")
+		return fmt.Errorf("%w: document_annotation_format is required with document_annotation_prompt", ErrInvalidRequest)
 	}
 	return nil
 }
@@ -63,6 +69,7 @@ func (r OCRURLRequest) document() ocrDocument {
 // OCRByURL runs POST /v1/ocr on a document or image referenced by URL,
 // skipping the file upload round-trip.
 func (c *Client) OCRByURL(ctx context.Context, req OCRURLRequest) (OCRResponse, error) {
+	req.normalize()
 	if err := req.validate(); err != nil {
 		return OCRResponse{}, err
 	}

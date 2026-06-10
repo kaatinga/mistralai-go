@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -195,14 +196,15 @@ func TestEmbeddings_validation(t *testing.T) {
 		{"missing input", EmbeddingRequest{Model: "mistral-embed"}, "input is required"},
 		{"empty string", EmbeddingRequest{Model: "mistral-embed", Input: EmbeddingInputString("  ")}, "input is required"},
 		{"empty batch", EmbeddingRequest{Model: "mistral-embed", Input: EmbeddingInputStrings()}, "input is required"},
-		{"bad encoding", EmbeddingRequest{Model: "mistral-embed", Input: EmbeddingInputString("x"), EncodingFormat: "hex"}, "encoding_format"},
-		{"bad dtype", EmbeddingRequest{Model: "mistral-embed", Input: EmbeddingInputString("x"), OutputDType: "fp16"}, "output_dtype"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := cl.Embeddings(context.Background(), tc.req)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v want substring %q", err, tc.want)
+			}
+			if !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("err = %v want errors.Is ErrInvalidRequest", err)
 			}
 		})
 	}

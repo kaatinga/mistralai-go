@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -42,7 +41,7 @@ type batchResultLine struct {
 // with ParseBatchResults.
 func (c *Client) DownloadFile(ctx context.Context, fileID string) ([]byte, error) {
 	if strings.TrimSpace(fileID) == "" {
-		return nil, errors.New("mistral: file id is required")
+		return nil, fmt.Errorf("%w: file id is required", ErrInvalidRequest)
 	}
 	body, err := c.getRaw(ctx, "/v1/files/"+url.PathEscape(fileID)+"/content")
 	if err != nil {

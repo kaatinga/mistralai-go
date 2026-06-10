@@ -170,7 +170,7 @@ func TestUploadBatchInput(t *testing.T) {
 		if hdr.Filename != "batch.jsonl" {
 			t.Errorf("filename = %q", hdr.Filename)
 		}
-		_ = json.NewEncoder(w).Encode(uploadFileResponse{ID: wantFileID, Object: "file", Purpose: filePurposeBatch})
+		_ = json.NewEncoder(w).Encode(uploadFileResponse{ID: wantFileID, Object: "file", Purpose: FilePurposeBatch})
 	}))
 	defer srv.Close()
 
@@ -193,7 +193,7 @@ func TestUploadBatchInput(t *testing.T) {
 	if fileID != wantFileID {
 		t.Errorf("file id = %q", fileID)
 	}
-	if gotPurpose != filePurposeBatch {
+	if gotPurpose != FilePurposeBatch {
 		t.Errorf("purpose = %q", gotPurpose)
 	}
 

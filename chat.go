@@ -3,7 +3,6 @@ package mistralai
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -14,7 +13,8 @@ const (
 	ChatModelPixtral12BLatest    = "pixtral-12b-latest"
 	ChatModelPixtralLargeLatest  = "pixtral-large-latest"
 
-	// DefaultChatModel is used when ChatRequest.Model is empty.
+	// DefaultChatModel is used when ChatRequest.Model is empty. It is also the
+	// job-level model CreateBatchJob defaults to for the chat batch endpoint.
 	DefaultChatModel   = ChatModelMistralSmallLatest
 	markdownSystemHint = "Format your entire reply as Markdown."
 	jsonSystemHint     = "Reply with a single valid JSON value only. Do not wrap it in markdown fences or add commentary."
@@ -77,13 +77,13 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest) (ChatResponse, error
 
 func (r ChatRequest) validate() error {
 	if strings.TrimSpace(r.Input) == "" {
-		return errors.New("mistral: input is required")
+		return fmt.Errorf("%w: input is required", ErrInvalidRequest)
 	}
 	switch r.Format {
 	case "", OutputText, OutputMarkdown, OutputJSON:
 		return nil
 	default:
-		return fmt.Errorf("mistral: unsupported output format %q", r.Format)
+		return fmt.Errorf("%w: unsupported output format %q", ErrInvalidRequest, r.Format)
 	}
 }
 
@@ -151,14 +151,14 @@ func chatPromptConfig(req ChatRequest, format OutputFormat) (system string, resp
 			case ResponseFormatJSONSchema, ResponseFormatJSONObject:
 				return system, req.ResponseFormat, nil
 			case ResponseFormatText, "":
-				return "", nil, errors.New("mistral: ResponseFormat type must be json_object or json_schema for json output")
+				return "", nil, fmt.Errorf("%w: ResponseFormat type must be json_object or json_schema for json output", ErrInvalidRequest)
 			default:
-				return "", nil, fmt.Errorf("mistral: unsupported ResponseFormat type %q for json output", req.ResponseFormat.Type)
+				return "", nil, fmt.Errorf("%w: unsupported ResponseFormat type %q for json output", ErrInvalidRequest, req.ResponseFormat.Type)
 			}
 		}
 		return system, &ResponseFormat{Type: ResponseFormatJSONObject}, nil
 	default:
-		return "", nil, fmt.Errorf("mistral: unsupported output format %q", format)
+		return "", nil, fmt.Errorf("%w: unsupported output format %q", ErrInvalidRequest, format)
 	}
 }
 

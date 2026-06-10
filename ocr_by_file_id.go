@@ -2,7 +2,6 @@ package mistralai
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -12,7 +11,7 @@ import (
 func (c *Client) OCRByFileID(ctx context.Context, fileID string, model string) (OCRResponse, error) {
 	fileID = strings.TrimSpace(fileID)
 	if fileID == "" {
-		return OCRResponse{}, errors.New("mistral: file id is required")
+		return OCRResponse{}, fmt.Errorf("%w: file id is required", ErrInvalidRequest)
 	}
 	if model == "" {
 		model = DefaultOCRModel

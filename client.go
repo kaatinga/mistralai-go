@@ -2,7 +2,6 @@ package mistralai
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,9 +13,15 @@ import (
 const (
 	// DefaultBaseURL is the Mistral cloud API origin.
 	DefaultBaseURL = "https://api.mistral.ai"
-	// DefaultOCRModel is used when OCRRequest.Model is empty.
-	DefaultOCRModel         = "mistral-ocr-latest"
-	filePurposeOCR          = "ocr"
+	// DefaultOCRModel is used when OCRRequest.Model is empty. It is also the
+	// job-level model CreateBatchJob defaults to for the OCR batch endpoint.
+	DefaultOCRModel = "mistral-ocr-latest"
+
+	// FilePurposeOCR and FilePurposeBatch are the purposes accepted by
+	// UploadFile (UploadFileRequest.Purpose).
+	FilePurposeOCR   = "ocr"
+	FilePurposeBatch = "batch"
+
 	documentTypeFile        = "file"
 	documentTypeDocumentURL = "document_url"
 	documentTypeImageURL    = "image_url"
@@ -104,7 +109,8 @@ type clientOptions struct {
 	maxRetries *int
 }
 
-// WithBaseURL overrides DefaultBaseURL (for tests).
+// WithBaseURL overrides DefaultBaseURL, e.g. to route requests through a
+// proxy or API gateway, or to point tests at a local server.
 func WithBaseURL(baseURL string) ClientOption {
 	return func(o *clientOptions) { o.baseURL = baseURL }
 }
@@ -127,7 +133,7 @@ func WithMaxRetries(n int) ClientOption {
 func NewClient(apiKey string, opts ...ClientOption) (*Client, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
-		return nil, errors.New("mistral: API key is required")
+		return nil, fmt.Errorf("%w: API key is required", ErrInvalidRequest)
 	}
 	var o clientOptions
 	for _, opt := range opts {
@@ -173,17 +179,17 @@ func (c *Client) OCR(ctx context.Context, req OCRRequest) (OCRResponse, error) {
 }
 
 // UploadFile uploads file bytes (POST /v1/files) and returns the API file id.
-// Purpose defaults to "ocr".
+// Purpose defaults to FilePurposeOCR; use FilePurposeBatch for batch inputs.
 func (c *Client) UploadFile(ctx context.Context, req UploadFileRequest) (string, error) {
 	if strings.TrimSpace(req.Filename) == "" {
-		return "", errors.New("mistral: filename is required")
+		return "", fmt.Errorf("%w: filename is required", ErrInvalidRequest)
 	}
 	if req.Content == nil {
-		return "", errors.New("mistral: content is required")
+		return "", fmt.Errorf("%w: content is required", ErrInvalidRequest)
 	}
 	purpose := strings.TrimSpace(req.Purpose)
 	if purpose == "" {
-		purpose = filePurposeOCR
+		purpose = FilePurposeOCR
 	}
 	return c.uploadFile(ctx, req.Filename, req.Content, req.ContentType, purpose)
 }
@@ -191,26 +197,26 @@ func (c *Client) UploadFile(ctx context.Context, req UploadFileRequest) (string,
 // DeleteFile removes an uploaded file (DELETE /v1/files/{file_id}).
 func (c *Client) DeleteFile(ctx context.Context, fileID string) error {
 	if strings.TrimSpace(fileID) == "" {
-		return errors.New("mistral: file id is required")
+		return fmt.Errorf("%w: file id is required", ErrInvalidRequest)
 	}
 	return c.doJSON(ctx, http.MethodDelete, "/v1/files/"+url.PathEscape(fileID), nil, nil, nil)
 }
 
 func (r OCRRequest) validate() error {
 	if strings.TrimSpace(r.Filename) == "" {
-		return errors.New("mistral: filename is required")
+		return fmt.Errorf("%w: filename is required", ErrInvalidRequest)
 	}
 	if r.Content == nil {
-		return errors.New("mistral: content is required")
+		return fmt.Errorf("%w: content is required", ErrInvalidRequest)
 	}
 	if r.DocumentAnnotationPrompt != "" && r.DocumentAnnotationFormat == nil {
-		return errors.New("mistral: document_annotation_format is required with document_annotation_prompt")
+		return fmt.Errorf("%w: document_annotation_format is required with document_annotation_prompt", ErrInvalidRequest)
 	}
 	return nil
 }
 
 func (c *Client) processOCR(ctx context.Context, req OCRRequest) (*OCRResponse, error) {
-	fileID, err := c.uploadFile(ctx, req.Filename, req.Content, req.ContentType, filePurposeOCR)
+	fileID, err := c.uploadFile(ctx, req.Filename, req.Content, req.ContentType, FilePurposeOCR)
 	if err != nil {
 		return nil, fmt.Errorf("mistral: upload file: %w", err)
 	}

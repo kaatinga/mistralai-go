@@ -3,15 +3,12 @@ package mistralai
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 )
-
-const filePurposeBatch = "batch"
 
 // Batch endpoints accepted by CreateBatchJobRequest.Endpoint. Any string is
 // allowed (forward compatibility); these constants document the set supported
@@ -97,7 +94,8 @@ type CreateBatchJobRequest struct {
 	// Model is required by the Batch API at job level (per-entry body model is optional then).
 	// When empty, CreateBatchJob defaults by endpoint (OCR → DefaultOCRModel, chat → DefaultChatModel).
 	Model string
-	// Metadata is arbitrary string metadata stored on the job.
+	// Metadata is arbitrary metadata stored on the job. The Batch API constrains
+	// values to strings (unlike chat/embeddings metadata, which allows any JSON).
 	Metadata map[string]string
 	// TimeoutHours bounds job runtime; 0 omits the field (API default is 24).
 	TimeoutHours int
@@ -113,18 +111,18 @@ type createBatchJobBody struct {
 
 func (r CreateBatchJobRequest) validate() error {
 	if strings.TrimSpace(r.Endpoint) == "" {
-		return errors.New("mistral: endpoint is required")
+		return fmt.Errorf("%w: endpoint is required", ErrInvalidRequest)
 	}
 	if len(r.InputFiles) == 0 {
-		return errors.New("mistral: at least one input file is required")
+		return fmt.Errorf("%w: at least one input file is required", ErrInvalidRequest)
 	}
 	for i, f := range r.InputFiles {
 		if strings.TrimSpace(f) == "" {
-			return fmt.Errorf("mistral: input file %d is empty", i)
+			return fmt.Errorf("%w: input file %d is empty", ErrInvalidRequest, i)
 		}
 	}
 	if r.TimeoutHours < 0 {
-		return errors.New("mistral: timeout_hours must not be negative")
+		return fmt.Errorf("%w: timeout_hours must not be negative", ErrInvalidRequest)
 	}
 	if _, err := r.jobModel(); err != nil {
 		return err
@@ -150,7 +148,7 @@ func (r CreateBatchJobRequest) jobModel() (string, error) {
 	if m := defaultBatchJobModel(r.Endpoint); m != "" {
 		return m, nil
 	}
-	return "", errors.New("mistral: model is required")
+	return "", fmt.Errorf("%w: model is required", ErrInvalidRequest)
 }
 
 // ListBatchJobsRequest filters and paginates GET /v1/batch/jobs.
@@ -209,7 +207,7 @@ func (c *Client) ListBatchJobs(ctx context.Context, req ListBatchJobsRequest) (B
 // GetBatchJob fetches one batch job (GET /v1/batch/jobs/{job_id}).
 func (c *Client) GetBatchJob(ctx context.Context, jobID string) (BatchJob, error) {
 	if strings.TrimSpace(jobID) == "" {
-		return BatchJob{}, errors.New("mistral: job id is required")
+		return BatchJob{}, fmt.Errorf("%w: job id is required", ErrInvalidRequest)
 	}
 	var job BatchJob
 	if err := c.getJSON(ctx, "/v1/batch/jobs/"+url.PathEscape(jobID), nil, &job); err != nil {
@@ -221,7 +219,7 @@ func (c *Client) GetBatchJob(ctx context.Context, jobID string) (BatchJob, error
 // CancelBatchJob requests cancellation (POST /v1/batch/jobs/{job_id}/cancel).
 func (c *Client) CancelBatchJob(ctx context.Context, jobID string) (BatchJob, error) {
 	if strings.TrimSpace(jobID) == "" {
-		return BatchJob{}, errors.New("mistral: job id is required")
+		return BatchJob{}, fmt.Errorf("%w: job id is required", ErrInvalidRequest)
 	}
 	var job BatchJob
 	if err := c.postJSON(ctx, "/v1/batch/jobs/"+url.PathEscape(jobID)+"/cancel", nil, &job); err != nil {
