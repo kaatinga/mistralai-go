@@ -55,7 +55,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer cl.Close()
 
 	ctx := context.Background()
 
@@ -143,7 +142,7 @@ resp, err := mistralai.ChatCompletionWithTools(ctx, cl, mistralai.ChatCompletion
 		mistralai.TextMessage(mistralai.RoleUser, "How many apartments?"),
 	},
 	Tools:      tools,
-	ToolChoice: mistralai.ToolChoiceAuto,
+	ToolChoice: mistralai.ToolChoiceMode(mistralai.ToolChoiceAuto),
 }, handler, 3)
 if err != nil {
 	log.Fatal(err)
@@ -280,7 +279,7 @@ if err != nil {
 }
 
 // Poll until terminal (SUCCESS / FAILED / TIMEOUT_EXCEEDED / CANCELLED).
-waitCtx, cancel := mistralai.WithTimeout(ctx, time.Hour)
+waitCtx, cancel := context.WithTimeout(ctx, time.Hour)
 defer cancel()
 job, err = mistralai.WaitForBatchJob(waitCtx, cl, job.ID, 10*time.Second)
 if err != nil {

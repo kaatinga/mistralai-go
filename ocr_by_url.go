@@ -49,10 +49,20 @@ func (r OCRURLRequest) validate() error {
 	if r.DocumentName != "" && !hasDocument {
 		return fmt.Errorf("%w: DocumentName requires DocumentURL", ErrInvalidRequest)
 	}
-	if r.DocumentAnnotationPrompt != "" && r.DocumentAnnotationFormat == nil {
-		return fmt.Errorf("%w: document_annotation_format is required with document_annotation_prompt", ErrInvalidRequest)
+	return r.options().validate()
+}
+
+func (r OCRURLRequest) options() OCROptions {
+	return OCROptions{
+		Pages:                    r.Pages,
+		TableFormat:              r.TableFormat,
+		IncludeImageBase64:       r.IncludeImageBase64,
+		ExtractHeader:            r.ExtractHeader,
+		ExtractFooter:            r.ExtractFooter,
+		ID:                       r.ID,
+		DocumentAnnotationPrompt: r.DocumentAnnotationPrompt,
+		DocumentAnnotationFormat: r.DocumentAnnotationFormat,
 	}
-	return nil
 }
 
 func (r OCRURLRequest) document() ocrDocument {
@@ -74,25 +84,7 @@ func (c *Client) OCRByURL(ctx context.Context, req OCRURLRequest) (OCRResponse, 
 		return OCRResponse{}, err
 	}
 
-	model := req.Model
-	if model == "" {
-		model = DefaultOCRModel
-	}
-
-	body := ocrRequestBody{
-		Model:                    model,
-		Document:                 req.document(),
-		Pages:                    req.Pages,
-		ID:                       req.ID,
-		TableFmt:                 req.TableFormat,
-		Include:                  req.IncludeImageBase64,
-		ExtractH:                 req.ExtractHeader,
-		ExtractF:                 req.ExtractFooter,
-		DocumentAnnotationFormat: req.DocumentAnnotationFormat,
-	}
-	if req.DocumentAnnotationPrompt != "" {
-		body.DocumentAnnotationPrompt = new(req.DocumentAnnotationPrompt)
-	}
+	body := ocrBody(req.Model, req.document(), req.options())
 
 	var resp OCRResponse
 	if err := c.postJSON(ctx, "/v1/ocr", body, &resp); err != nil {

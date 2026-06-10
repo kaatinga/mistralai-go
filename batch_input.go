@@ -43,40 +43,50 @@ func EmbeddingEntry(customID string, req EmbeddingRequest) BatchEntry {
 }
 
 // OCREntryOption configures the optional fields of an OCR batch entry body.
-type OCREntryOption func(*ocrRequestBody)
+// The With* helpers below cover the common fields; custom options can set any
+// OCROptions field directly.
+type OCREntryOption func(*OCROptions)
 
 // WithOCRPages limits OCR to the given zero-based page indices.
 func WithOCRPages(pages ...int) OCREntryOption {
-	return func(b *ocrRequestBody) { b.Pages = pages }
+	return func(o *OCROptions) { o.Pages = pages }
 }
 
 // WithOCRTableFormat sets the table output format ("markdown" or "html").
 func WithOCRTableFormat(format string) OCREntryOption {
-	return func(b *ocrRequestBody) { b.TableFmt = format }
+	return func(o *OCROptions) { o.TableFormat = format }
 }
 
 // WithOCRImageBase64 requests base64 image payloads in the response.
 func WithOCRImageBase64(include bool) OCREntryOption {
-	return func(b *ocrRequestBody) { b.Include = new(include) }
+	return func(o *OCROptions) { o.IncludeImageBase64 = new(include) }
 }
 
 // WithOCRExtractHeader toggles document header extraction.
 func WithOCRExtractHeader(extract bool) OCREntryOption {
-	return func(b *ocrRequestBody) { b.ExtractH = new(extract) }
+	return func(o *OCROptions) { o.ExtractHeader = new(extract) }
 }
 
 // WithOCRExtractFooter toggles document footer extraction.
 func WithOCRExtractFooter(extract bool) OCREntryOption {
-	return func(b *ocrRequestBody) { b.ExtractF = new(extract) }
+	return func(o *OCROptions) { o.ExtractFooter = new(extract) }
 }
 
 // WithOCRDocumentAnnotation sets a structured-extraction prompt and its required
 // response format (see JSONSchemaFormat).
 func WithOCRDocumentAnnotation(prompt string, format *ResponseFormat) OCREntryOption {
-	return func(b *ocrRequestBody) {
-		b.DocumentAnnotationPrompt = new(prompt)
-		b.DocumentAnnotationFormat = format
+	return func(o *OCROptions) {
+		o.DocumentAnnotationPrompt = prompt
+		o.DocumentAnnotationFormat = format
 	}
+}
+
+func ocrEntryOptions(opts []OCREntryOption) OCROptions {
+	var o OCROptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return o
 }
 
 // OCREntry builds a batch entry for the /v1/ocr endpoint. Unlike the synchronous
@@ -84,40 +94,16 @@ func WithOCRDocumentAnnotation(prompt string, format *ResponseFormat) OCREntryOp
 // (see UploadFile), so pass its file id rather than raw content. model defaults
 // to DefaultOCRModel when empty.
 func OCREntry(customID, model, fileID string, opts ...OCREntryOption) BatchEntry {
-	if model == "" {
-		model = DefaultOCRModel
-	}
-	body := ocrRequestBody{
-		Model: model,
-		Document: ocrDocument{
-			Type:   documentTypeFile,
-			FileID: fileID,
-		},
-	}
-	for _, opt := range opts {
-		opt(&body)
-	}
-	return BatchEntry{CustomID: customID, Body: body}
+	doc := ocrDocument{Type: documentTypeFile, FileID: fileID}
+	return BatchEntry{CustomID: customID, Body: ocrBody(model, doc, ocrEntryOptions(opts))}
 }
 
 // OCRURLEntry builds a batch entry for the /v1/ocr endpoint that references a
 // document by URL instead of an uploaded file id. model defaults to
 // DefaultOCRModel when empty.
 func OCRURLEntry(customID, model, documentURL string, opts ...OCREntryOption) BatchEntry {
-	if model == "" {
-		model = DefaultOCRModel
-	}
-	body := ocrRequestBody{
-		Model: model,
-		Document: ocrDocument{
-			Type:        documentTypeDocumentURL,
-			DocumentURL: documentURL,
-		},
-	}
-	for _, opt := range opts {
-		opt(&body)
-	}
-	return BatchEntry{CustomID: customID, Body: body}
+	doc := ocrDocument{Type: documentTypeDocumentURL, DocumentURL: documentURL}
+	return BatchEntry{CustomID: customID, Body: ocrBody(model, doc, ocrEntryOptions(opts))}
 }
 
 // BuildBatchInputJSONL serializes entries into newline-delimited JSON (one

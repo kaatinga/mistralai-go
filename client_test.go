@@ -82,7 +82,6 @@ func TestOCR_uploadAndOCR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	ctx := context.Background()
 	result, err := cl.OCR(ctx, OCRRequest{
@@ -124,7 +123,6 @@ func TestDeleteFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer cl.Close()
 
 		if err := cl.DeleteFile(context.Background(), wantFileID); err != nil {
 			t.Fatal(err)
@@ -150,7 +148,6 @@ func TestDeleteFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer cl.Close()
 
 		err = cl.DeleteFile(context.Background(), wantFileID)
 		if err == nil {
@@ -167,7 +164,6 @@ func TestDeleteFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer cl.Close()
 
 		if err := cl.DeleteFile(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "file id is required") {
 			t.Fatalf("err = %v", err)
@@ -196,7 +192,6 @@ func TestOCR_apiError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	_, err = cl.OCR(context.Background(), OCRRequest{
 		Filename: "x.pdf",
@@ -291,7 +286,6 @@ func TestChat_textMarkdownJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	ctx := context.Background()
 
@@ -320,7 +314,6 @@ func TestChat_requiresInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	_, err = cl.Chat(context.Background(), ChatRequest{})
 	if err == nil || !strings.Contains(err.Error(), "input is required") {
@@ -360,7 +353,6 @@ func TestChatCompletion_multiMessageAndTemperature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	resp, err := cl.ChatCompletion(context.Background(), ChatCompletionRequest{
 		Model: "mistral-large-latest",
@@ -407,7 +399,6 @@ func TestListFiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer cl.Close()
 
 		list, err := cl.ListFiles(context.Background(), ListFilesRequest{})
 		if err != nil {
@@ -457,7 +448,6 @@ func TestListFiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer cl.Close()
 
 		_, err = cl.ListFiles(context.Background(), ListFilesRequest{
 			Page:         new(1),
@@ -495,7 +485,6 @@ func TestListModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	list, err := cl.ListModels(context.Background())
 	if err != nil {
@@ -527,7 +516,6 @@ func TestDoJSON_retriesOn429(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	list, err := cl.ListModels(context.Background())
 	if err != nil {
@@ -538,18 +526,5 @@ func TestDoJSON_retriesOn429(t *testing.T) {
 	}
 	if len(list.Data) != 1 || list.Data[0].ID != "ok" {
 		t.Fatalf("list = %+v", list)
-	}
-}
-
-func TestClose_idempotent(t *testing.T) {
-	cl, err := NewClient("k", WithBaseURL("http://127.0.0.1:1"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cl.Close(); err != nil {
-		t.Fatalf("first close: %v", err)
-	}
-	if err := cl.Close(); err != nil {
-		t.Fatalf("second close: %v", err)
 	}
 }

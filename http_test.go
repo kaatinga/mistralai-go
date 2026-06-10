@@ -35,7 +35,6 @@ func TestUploadFile_retriesOn429(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	id, err := cl.UploadFile(context.Background(), UploadFileRequest{
 		Filename: "a.pdf",
@@ -69,7 +68,6 @@ func TestWithMaxRetries_countsRetriesNotAttempts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer cl.Close()
 
 		if _, err := cl.ListModels(context.Background()); err == nil {
 			t.Fatal("expected error")
@@ -94,7 +92,6 @@ func TestDoRetry_acceptsNon200Success(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	if err := cl.DeleteFile(context.Background(), "file-1"); err != nil {
 		t.Fatalf("DeleteFile on 204: %v", err)
@@ -113,7 +110,6 @@ func TestDoRetry_setsUserAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	if _, err := cl.ListModels(context.Background()); err != nil {
 		t.Fatal(err)

@@ -231,7 +231,7 @@ func (c *Client) CancelBatchJob(ctx context.Context, jobID string) (BatchJob, er
 // WaitForBatchJob polls GetBatchJob every pollInterval (default 5s) until the
 // job reaches a terminal status (SUCCESS, FAILED, TIMEOUT_EXCEEDED, CANCELLED)
 // or ctx is done. It polls once immediately, then on each tick. Wrap ctx with
-// WithTimeout to bound the total wait.
+// context.WithTimeout to bound the total wait.
 //
 // A terminal-but-failed job (FAILED, TIMEOUT_EXCEEDED) is returned without a Go
 // error; inspect BatchJob.Errors and download BatchJob.ErrorFile to handle it.

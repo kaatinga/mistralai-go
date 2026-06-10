@@ -58,7 +58,6 @@ func TestCreateBatchJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	job, err := cl.CreateBatchJob(context.Background(), CreateBatchJobRequest{
 		Endpoint:     BatchEndpointChatCompletions,
@@ -107,7 +106,6 @@ func TestCreateBatchJob_OCR_defaultsModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	if _, err := cl.CreateBatchJob(context.Background(), CreateBatchJobRequest{
 		Endpoint:   BatchEndpointOCR,
@@ -122,7 +120,6 @@ func TestCreateBatchJob_validate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	cases := map[string]CreateBatchJobRequest{
 		"missing endpoint": {InputFiles: []string{"f"}},
@@ -169,7 +166,6 @@ func TestListBatchJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	list, err := cl.ListBatchJobs(context.Background(), ListBatchJobsRequest{
 		Page:        new(1),
@@ -218,7 +214,6 @@ func TestGetBatchJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	job, err := cl.GetBatchJob(context.Background(), wantJobID)
 	if err != nil {
@@ -251,7 +246,6 @@ func TestCancelBatchJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	job, err := cl.CancelBatchJob(context.Background(), wantJobID)
 	if err != nil {
@@ -298,7 +292,6 @@ func TestWaitForBatchJob(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer cl.Close()
 
 		job, err := WaitForBatchJob(context.Background(), cl, "job-1", time.Millisecond)
 		if err != nil {
@@ -324,7 +317,6 @@ func TestWaitForBatchJob(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer cl.Close()
 
 		job, err := WaitForBatchJob(context.Background(), cl, "job-1", time.Hour)
 		if err != nil {
@@ -345,7 +337,6 @@ func TestWaitForBatchJob(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer cl.Close()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 		defer cancel()

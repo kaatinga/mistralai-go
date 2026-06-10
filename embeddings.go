@@ -14,9 +14,6 @@ import (
 const (
 	EmbeddingModelMistralEmbed = "mistral-embed"
 
-	// DefaultEmbeddingModel is used when EmbeddingRequest.Model is empty.
-	DefaultEmbeddingModel = EmbeddingModelMistralEmbed
-
 	EncodingFormatFloat  = "float"
 	EncodingFormatBase64 = "base64"
 	OutputDTypeFloat     = "float"
@@ -154,11 +151,10 @@ func (r EmbeddingRequest) validate() error {
 	return nil
 }
 
-// Embeddings runs POST /v1/embeddings. Model defaults to DefaultEmbeddingModel.
+// Embeddings runs POST /v1/embeddings. Model is required (e.g.
+// EmbeddingModelMistralEmbed); like the other raw-request methods, this one
+// never defaults it.
 func (c *Client) Embeddings(ctx context.Context, req EmbeddingRequest) (EmbeddingResponse, error) {
-	if req.Model == "" {
-		req.Model = DefaultEmbeddingModel
-	}
 	if err := req.validate(); err != nil {
 		return EmbeddingResponse{}, err
 	}

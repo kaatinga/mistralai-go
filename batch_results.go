@@ -23,7 +23,9 @@ type BatchResult[T any] struct {
 	CustomID   string
 	StatusCode int
 	Body       T
-	Error      any
+	// Error is the raw error payload of a failed entry (nil on success);
+	// unmarshal it into your own type as needed.
+	Error json.RawMessage
 }
 
 type batchResultLine struct {
@@ -70,7 +72,7 @@ func ParseBatchResults[T any](jsonl []byte) ([]BatchResult[T], error) {
 		}
 		res := BatchResult[T]{ID: raw.ID, CustomID: raw.CustomID}
 		if len(raw.Error) > 0 && string(raw.Error) != "null" {
-			_ = json.Unmarshal(raw.Error, &res.Error)
+			res.Error = raw.Error
 		}
 		if raw.Response != nil {
 			res.StatusCode = raw.Response.StatusCode

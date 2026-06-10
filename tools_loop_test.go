@@ -66,7 +66,6 @@ func TestChatCompletionWithTools_singleCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	var handlerCalls []ToolCall
 	resp, err := ChatCompletionWithTools(context.Background(), cl, ChatCompletionRequest{
@@ -77,7 +76,7 @@ func TestChatCompletionWithTools_singleCall(t *testing.T) {
 		Tools: []Tool{
 			FunctionTool("count_apartments", "Count apartments", map[string]any{"type": "object"}),
 		},
-		ToolChoice: ToolChoiceAuto,
+		ToolChoice: ToolChoiceMode(ToolChoiceAuto),
 	}, func(_ context.Context, call ToolCall) (string, error) {
 		handlerCalls = append(handlerCalls, call)
 		return `{"count":8}`, nil
@@ -148,7 +147,6 @@ func TestChatCompletionWithTools_parallelCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	var handled []string
 	_, err = ChatCompletionWithTools(context.Background(), cl, ChatCompletionRequest{
@@ -176,7 +174,7 @@ func TestChatCompletionWithTools_parallelCalls(t *testing.T) {
 func TestChatCompletionWithTools_preservesToolChoice(t *testing.T) {
 	var calls int
 	var mu sync.Mutex
-	var toolChoices []any
+	var toolChoices []ToolChoice
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body ChatCompletionRequest
@@ -217,13 +215,12 @@ func TestChatCompletionWithTools_preservesToolChoice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	_, err = ChatCompletionWithTools(context.Background(), cl, ChatCompletionRequest{
 		Model:      DefaultChatModel,
 		Messages:   []ChatMessage{TextMessage(RoleUser, "go")},
 		Tools:      []Tool{FunctionTool("fn", "", nil)},
-		ToolChoice: ToolChoiceNamed("fn"),
+		ToolChoice: ToolChoiceFunction("fn"),
 	}, func(context.Context, ToolCall) (string, error) {
 		return "{}", nil
 	}, 3)
@@ -236,7 +233,7 @@ func TestChatCompletionWithTools_preservesToolChoice(t *testing.T) {
 	// req is sent verbatim every round: the named (object) choice must persist,
 	// not be silently rewritten by the loop.
 	for i, tc := range toolChoices {
-		if _, ok := tc.(map[string]any); !ok {
+		if tc != ToolChoiceFunction("fn") {
 			t.Fatalf("tool_choice on call %d should be the named (object) choice, got %#v", i+1, tc)
 		}
 	}
@@ -261,7 +258,6 @@ func TestChatCompletionWithTools_doesNotMutateCallerMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	// Give the slice spare capacity so a naive append would clobber it.
 	msgs := make([]ChatMessage, 1, 8)
@@ -302,7 +298,6 @@ func TestChatCompletionWithTools_maxRoundsExceeded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	_, err = ChatCompletionWithTools(context.Background(), cl, ChatCompletionRequest{
 		Model:    DefaultChatModel,
@@ -321,7 +316,6 @@ func TestChatCompletionWithTools_validation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	req := ChatCompletionRequest{
 		Model:    DefaultChatModel,

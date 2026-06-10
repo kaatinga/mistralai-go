@@ -30,7 +30,6 @@ func TestOCRByURL_documentURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	resp, err := cl.OCRByURL(context.Background(), OCRURLRequest{
 		DocumentURL:  "https://example.com/a.pdf",
@@ -74,7 +73,6 @@ func TestOCRByURL_imageURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	if _, err := cl.OCRByURL(context.Background(), OCRURLRequest{
 		ImageURL: "data:image/png;base64,iVBORw0",
@@ -100,7 +98,6 @@ func TestOCRByURL_validation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	cases := []struct {
 		name    string

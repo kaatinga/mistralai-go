@@ -111,7 +111,9 @@ type ChatCompletionRequest struct {
 	Metadata       map[string]any  `json:"metadata,omitempty"`
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
 	Tools          []Tool          `json:"tools,omitempty"`
-	ToolChoice     any             `json:"tool_choice,omitempty"`
+	// ToolChoice selects the tool-calling mode or forces one function; build it
+	// with ToolChoiceMode or ToolChoiceFunction.
+	ToolChoice ToolChoice `json:"tool_choice,omitzero"`
 	// PresencePenalty (-2..2) penalizes words that already appeared at all;
 	// pointer so an explicit 0 differs from unset.
 	PresencePenalty *float64 `json:"presence_penalty,omitempty"`

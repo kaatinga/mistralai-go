@@ -22,6 +22,12 @@ func TestOCRByFileID(t *testing.T) {
 		if body.Document.FileID != wantFileID {
 			t.Errorf("file_id = %q", body.Document.FileID)
 		}
+		if body.Model != DefaultOCRModel {
+			t.Errorf("model = %q", body.Model)
+		}
+		if len(body.Pages) != 2 || body.TableFmt != "html" {
+			t.Errorf("options not forwarded: %+v", body)
+		}
 		_ = json.NewEncoder(w).Encode(OCRResponse{
 			Pages:     []OCRPage{{Index: 0, Markdown: "# Title"}},
 			UsageInfo: OCRUsageInfo{PagesProcessed: 1},
@@ -33,7 +39,11 @@ func TestOCRByFileID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, err := cl.OCRByFileID(context.Background(), wantFileID, "")
+	resp, err := cl.OCRByFileID(context.Background(), OCRFileRequest{
+		FileID:      wantFileID,
+		Pages:       []int{0, 1},
+		TableFormat: "html",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

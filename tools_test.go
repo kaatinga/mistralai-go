@@ -61,7 +61,7 @@ func TestToolJSONRoundTrip(t *testing.T) {
 		t.Fatalf("msg = %+v", decodedMsg)
 	}
 
-	named := ToolChoiceNamed("count_apartments")
+	named := ToolChoiceFunction("count_apartments")
 	data, err = json.Marshal(named)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +138,7 @@ func TestChatCompletionRequest_toolsFields(t *testing.T) {
 		if len(body.Tools) != 1 || body.Tools[0].Function.Name != "get_weather" {
 			t.Fatalf("tools = %+v", body.Tools)
 		}
-		if body.ToolChoice != ToolChoiceAuto {
+		if body.ToolChoice != ToolChoiceMode(ToolChoiceAuto) {
 			t.Fatalf("tool_choice = %v", body.ToolChoice)
 		}
 		if body.ParallelToolCalls == nil || *body.ParallelToolCalls {
@@ -157,7 +157,6 @@ func TestChatCompletionRequest_toolsFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	_, err = cl.ChatCompletion(context.Background(), ChatCompletionRequest{
 		Model: DefaultChatModel,
@@ -170,10 +169,28 @@ func TestChatCompletionRequest_toolsFields(t *testing.T) {
 				"properties": map[string]any{},
 			}),
 		},
-		ToolChoice:        ToolChoiceAuto,
+		ToolChoice:        ToolChoiceMode(ToolChoiceAuto),
 		ParallelToolCalls: &parallel,
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestToolChoice_zeroValueOmitted(t *testing.T) {
+	data, err := json.Marshal(ChatCompletionRequest{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "tool_choice") {
+		t.Fatalf("zero ToolChoice should be omitted: %s", data)
+	}
+
+	data, err = json.Marshal(ChatCompletionRequest{Model: "m", ToolChoice: ToolChoiceMode(ToolChoiceAny)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"tool_choice":"any"`) {
+		t.Fatalf("mode tool_choice = %s", data)
 	}
 }

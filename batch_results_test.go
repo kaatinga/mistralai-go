@@ -104,7 +104,6 @@ func TestDownloadFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	body, err := cl.DownloadFile(context.Background(), wantFileID)
 	if err != nil {
@@ -130,7 +129,6 @@ func TestDownloadFile_apiError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	_, err = cl.DownloadFile(context.Background(), "missing")
 	var apiErr *APIError

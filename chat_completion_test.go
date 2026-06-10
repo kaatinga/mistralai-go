@@ -25,7 +25,6 @@ func TestChatCompletion_requestFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	_, err = cl.ChatCompletion(context.Background(), ChatCompletionRequest{
 		Model:            "mistral-small-latest",
@@ -91,7 +90,6 @@ func TestChatCompletion_zeroValueFieldsOmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	_, err = cl.ChatCompletion(context.Background(), ChatCompletionRequest{
 		Model:    "mistral-small-latest",
@@ -117,7 +115,6 @@ func TestChatCompletion_streamRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	_, err = cl.ChatCompletion(context.Background(), ChatCompletionRequest{
 		Model:    "mistral-small-latest",

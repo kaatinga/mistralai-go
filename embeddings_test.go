@@ -72,7 +72,6 @@ func TestEmbeddings_singleAndBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	dim := 512
 	resp, err := cl.Embeddings(context.Background(), EmbeddingRequest{
@@ -98,7 +97,7 @@ func TestEmbeddings_singleAndBatch(t *testing.T) {
 	}
 }
 
-func TestEmbeddings_defaultModelAndSingleInput(t *testing.T) {
+func TestEmbeddings_singleInput(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Model string `json:"model"`
@@ -107,7 +106,7 @@ func TestEmbeddings_defaultModelAndSingleInput(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body.Model != DefaultEmbeddingModel {
+		if body.Model != EmbeddingModelMistralEmbed {
 			t.Errorf("model = %q", body.Model)
 		}
 		if body.Input != "hello" {
@@ -127,9 +126,9 @@ func TestEmbeddings_defaultModelAndSingleInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	resp, err := cl.Embeddings(context.Background(), EmbeddingRequest{
+		Model: EmbeddingModelMistralEmbed,
 		Input: EmbeddingInputString("hello"),
 	})
 	if err != nil {
@@ -150,7 +149,7 @@ func TestEmbeddings_base64Encoding(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(EmbeddingResponse{
 			Object: "list",
-			Model:  DefaultEmbeddingModel,
+			Model:  EmbeddingModelMistralEmbed,
 			Data: []EmbeddingData{
 				{Index: 0, Object: "embedding", Embedding: mustJSON(t, encoded)},
 			},
@@ -162,10 +161,9 @@ func TestEmbeddings_base64Encoding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	resp, err := cl.Embeddings(context.Background(), EmbeddingRequest{
-		Model:          DefaultEmbeddingModel,
+		Model:          EmbeddingModelMistralEmbed,
 		Input:          EmbeddingInputString("x"),
 		EncodingFormat: EncodingFormatBase64,
 	})
@@ -186,13 +184,13 @@ func TestEmbeddings_validation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	tests := []struct {
 		name string
 		req  EmbeddingRequest
 		want string
 	}{
+		{"missing model", EmbeddingRequest{Input: EmbeddingInputString("x")}, "model is required"},
 		{"missing input", EmbeddingRequest{Model: "mistral-embed"}, "input is required"},
 		{"empty string", EmbeddingRequest{Model: "mistral-embed", Input: EmbeddingInputString("  ")}, "input is required"},
 		{"empty batch", EmbeddingRequest{Model: "mistral-embed", Input: EmbeddingInputStrings()}, "input is required"},

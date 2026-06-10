@@ -71,7 +71,7 @@ func TestBuildBatchInputJSONL_toolsRoundTrip(t *testing.T) {
 					},
 				}),
 			},
-			ToolChoice: ToolChoiceAuto,
+			ToolChoice: ToolChoiceMode(ToolChoiceAuto),
 		}),
 	}
 
@@ -100,7 +100,7 @@ func TestBuildBatchInputJSONL_toolsRoundTrip(t *testing.T) {
 	if len(req.Tools) != 1 || req.Tools[0].Function.Name != "count_apartments" {
 		t.Fatalf("tools = %+v", req.Tools)
 	}
-	if req.ToolChoice != ToolChoiceAuto {
+	if req.ToolChoice != ToolChoiceMode(ToolChoiceAuto) {
 		t.Fatalf("tool_choice = %v", req.ToolChoice)
 	}
 }
@@ -178,7 +178,6 @@ func TestUploadBatchInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cl.Close()
 
 	entries := []BatchEntry{
 		ChatCompletionEntry("0", ChatCompletionRequest{

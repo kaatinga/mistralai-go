@@ -160,11 +160,6 @@ func NewClient(apiKey string, opts ...ClientOption) (*Client, error) {
 	}, nil
 }
 
-// Close releases resources. Safe to call more than once.
-func (c *Client) Close() error {
-	return nil
-}
-
 // OCR uploads the document via POST /v1/files, then runs POST /v1/ocr on the
 // uploaded file id; the file is deleted afterwards (best effort).
 func (c *Client) OCR(ctx context.Context, req OCRRequest) (OCRResponse, error) {
@@ -209,10 +204,20 @@ func (r OCRRequest) validate() error {
 	if r.Content == nil {
 		return fmt.Errorf("%w: content is required", ErrInvalidRequest)
 	}
-	if r.DocumentAnnotationPrompt != "" && r.DocumentAnnotationFormat == nil {
-		return fmt.Errorf("%w: document_annotation_format is required with document_annotation_prompt", ErrInvalidRequest)
+	return r.options().validate()
+}
+
+func (r OCRRequest) options() OCROptions {
+	return OCROptions{
+		Pages:                    r.Pages,
+		TableFormat:              r.TableFormat,
+		IncludeImageBase64:       r.IncludeImageBase64,
+		ExtractHeader:            r.ExtractHeader,
+		ExtractFooter:            r.ExtractFooter,
+		ID:                       r.ID,
+		DocumentAnnotationPrompt: r.DocumentAnnotationPrompt,
+		DocumentAnnotationFormat: r.DocumentAnnotationFormat,
 	}
-	return nil
 }
 
 func (c *Client) processOCR(ctx context.Context, req OCRRequest) (*OCRResponse, error) {
@@ -226,40 +231,11 @@ func (c *Client) processOCR(ctx context.Context, req OCRRequest) (*OCRResponse, 
 		_ = c.DeleteFile(cctx, fileID)
 	}()
 
-	model := req.Model
-	if model == "" {
-		model = DefaultOCRModel
-	}
-
-	body := ocrRequestBody{
-		Model: model,
-		Document: ocrDocument{
-			Type:   documentTypeFile,
-			FileID: fileID,
-		},
-		Pages:                    req.Pages,
-		ID:                       req.ID,
-		TableFmt:                 req.TableFormat,
-		Include:                  req.IncludeImageBase64,
-		ExtractH:                 req.ExtractHeader,
-		ExtractF:                 req.ExtractFooter,
-		DocumentAnnotationFormat: req.DocumentAnnotationFormat,
-	}
-	if req.DocumentAnnotationPrompt != "" {
-		body.DocumentAnnotationPrompt = new(req.DocumentAnnotationPrompt)
-	}
+	body := ocrBody(req.Model, ocrDocument{Type: documentTypeFile, FileID: fileID}, req.options())
 
 	var resp OCRResponse
 	if err = c.postJSON(ctx, "/v1/ocr", body, &resp); err != nil {
 		return nil, fmt.Errorf("mistral: ocr: %w", err)
 	}
 	return &resp, nil
-}
-
-// WithTimeout returns a child context with timeout unless ctx already has a sooner deadline.
-func WithTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < timeout {
-		return context.WithCancel(ctx)
-	}
-	return context.WithTimeout(ctx, timeout)
 }
