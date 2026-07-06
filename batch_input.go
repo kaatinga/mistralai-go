@@ -128,7 +128,7 @@ func BuildBatchInputJSONL(entries []BatchEntry) ([]byte, error) {
 		if e.Body == nil {
 			return nil, fmt.Errorf("%w: batch entry %q: body is required", ErrInvalidRequest, e.CustomID)
 		}
-		if err := enc.Encode(batchInputLine{CustomID: e.CustomID, Body: e.Body}); err != nil {
+		if err := enc.Encode(batchInputLine(e)); err != nil {
 			return nil, fmt.Errorf("mistral: encode batch entry %q: %w", e.CustomID, err)
 		}
 	}
