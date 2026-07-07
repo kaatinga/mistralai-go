@@ -10,8 +10,6 @@ import (
 const (
 	ChatModelMistralSmallLatest  = "mistral-small-latest"
 	ChatModelMistralMediumLatest = "mistral-medium-latest"
-	ChatModelPixtral12BLatest    = "pixtral-12b-latest"
-	ChatModelPixtralLargeLatest  = "pixtral-large-latest"
 
 	// DefaultChatModel is used when ChatRequest.Model is empty. It is also the
 	// job-level model CreateBatchJob defaults to for the chat batch endpoint.
