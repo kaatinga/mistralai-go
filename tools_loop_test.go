@@ -3,6 +3,7 @@ package mistralai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -90,7 +91,7 @@ func TestChatCompletionWithTools_singleCall(t *testing.T) {
 	if len(handlerCalls) != 1 || handlerCalls[0].Function.Name != "count_apartments" {
 		t.Fatalf("handler calls = %+v", handlerCalls)
 	}
-	got, err := resp.FirstChoiceContent()
+	got, err := resp.FirstText()
 	if err != nil || got != "There are 8 apartments." {
 		t.Fatalf("answer = %q err = %v", got, err)
 	}
@@ -171,7 +172,7 @@ func TestChatCompletionWithTools_parallelCalls(t *testing.T) {
 	}
 }
 
-func TestChatCompletionWithTools_preservesToolChoice(t *testing.T) {
+func TestChatCompletionWithTools_forcesNamedChoiceOnce(t *testing.T) {
 	var calls int
 	var mu sync.Mutex
 	var toolChoices []ToolChoice
@@ -230,12 +231,11 @@ func TestChatCompletionWithTools_preservesToolChoice(t *testing.T) {
 	if len(toolChoices) != 2 {
 		t.Fatalf("calls = %d", len(toolChoices))
 	}
-	// req is sent verbatim every round: the named (object) choice must persist,
-	// not be silently rewritten by the loop.
-	for i, tc := range toolChoices {
-		if tc != ToolChoiceFunction("fn") {
-			t.Fatalf("tool_choice on call %d should be the named (object) choice, got %#v", i+1, tc)
-		}
+	if toolChoices[0] != ToolChoiceFunction("fn") {
+		t.Fatalf("first tool_choice = %#v", toolChoices[0])
+	}
+	if toolChoices[1] != ToolChoiceMode(ToolChoiceAuto) {
+		t.Fatalf("second tool_choice = %#v", toolChoices[1])
 	}
 }
 
@@ -328,5 +328,66 @@ func TestChatCompletionWithTools_validation(t *testing.T) {
 		return "", nil
 	}, 0); err == nil {
 		t.Fatal("expected maxRounds error")
+	}
+}
+
+// The response produced by the last permitted round must be returned, not
+// discarded: with maxRounds=N the loop may send N+1 completions and the final
+// one carries the answer.
+func TestChatCompletionWithTools_answerOnLastRound(t *testing.T) {
+	const maxRounds = 2
+
+	var mu sync.Mutex
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		n := calls
+		mu.Unlock()
+
+		var resp ChatCompletionResponse
+		if n <= maxRounds {
+			resp = ChatCompletionResponse{
+				Choices: []ChatCompletionResponseChoice{{
+					FinishReason: FinishReasonToolCalls,
+					Message: AssistantToolCallsMessage([]ToolCall{{
+						ID:       fmt.Sprintf("call_%d", n),
+						Type:     ToolTypeFunction,
+						Function: FunctionCall{Name: "fn", Arguments: `{}`},
+					}}),
+				}},
+			}
+		} else {
+			resp = ChatCompletionResponse{
+				Choices: []ChatCompletionResponseChoice{{
+					FinishReason: FinishReasonStop,
+					Message:      TextMessage(RoleAssistant, "done"),
+				}},
+			}
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	cl, err := NewClient("test-key", WithBaseURL(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ChatCompletionWithTools(context.Background(), cl, ChatCompletionRequest{
+		Model:    DefaultChatModel,
+		Messages: []ChatMessage{TextMessage(RoleUser, "go")},
+		Tools:    []Tool{FunctionTool("fn", "", nil)},
+	}, func(context.Context, ToolCall) (string, error) {
+		return `{"ok":true}`, nil
+	}, maxRounds)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got, err := resp.FirstText(); err != nil || got != "done" {
+		t.Fatalf("answer = %q err = %v", got, err)
+	}
+	if calls != maxRounds+1 {
+		t.Fatalf("http calls = %d, want %d", calls, maxRounds+1)
 	}
 }

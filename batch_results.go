@@ -5,15 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
-	"net/url"
-	"strings"
 )
-
-// maxBatchResultLine bounds a single JSONL result line. OCR responses can be
-// large, so allow up to 16 MiB per line.
-const maxBatchResultLine = 16 * 1024 * 1024
 
 // BatchResult is one parsed line of a batch output (or error) file, keyed by the
 // entry's custom id. Body is populated only when StatusCode is 200; otherwise it
@@ -38,58 +34,99 @@ type batchResultLine struct {
 	Error json.RawMessage `json:"error"`
 }
 
-// DownloadFile downloads raw file content (GET /v1/files/{file_id}/content).
-// Use it to fetch a batch job's OutputFile or ErrorFile, then parse the bytes
-// with ParseBatchResults.
-func (c *Client) DownloadFile(ctx context.Context, fileID string) ([]byte, error) {
-	if strings.TrimSpace(fileID) == "" {
-		return nil, fmt.Errorf("%w: file id is required", ErrInvalidRequest)
+// DownloadFile streams raw file content and transfers body ownership to the
+// caller. Always close the returned body.
+func (c *Client) DownloadFile(ctx context.Context, fileID string) (io.ReadCloser, error) {
+	id, err := pathID("file id", fileID)
+	if err != nil {
+		return nil, err
 	}
-	body, err := c.getRaw(ctx, "/v1/files/"+url.PathEscape(fileID)+"/content")
+	resp, err := c.doStream(ctx, http.MethodGet, pathFiles+"/"+id+"/content", nil, true)
 	if err != nil {
 		return nil, fmt.Errorf("mistral: download file: %w", err)
 	}
-	return body, nil
+	return resp.Body, nil
 }
 
-// ParseBatchResults parses batch output JSONL (from DownloadFile) into typed
-// results, preserving file order. T is the endpoint's response type (e.g.
-// ChatCompletionResponse, OCRResponse). For each line with status_code 200 and
-// no error, response.body is unmarshaled into T; other lines keep their
-// StatusCode and Error with a zero Body. Blank lines are skipped.
-func ParseBatchResults[T any](jsonl []byte) ([]BatchResult[T], error) {
-	var out []BatchResult[T]
-	sc := bufio.NewScanner(bytes.NewReader(jsonl))
-	sc.Buffer(make([]byte, 0, 64*1024), maxBatchResultLine)
-	for sc.Scan() {
-		line := bytes.TrimSpace(sc.Bytes())
-		if len(line) == 0 {
-			continue
+// DefaultMaxBatchRecordBytes bounds a single JSONL record read by
+// DecodeBatchResults. It is far above any real result line and exists so a
+// truncated or malformed output file cannot be read whole into memory.
+const DefaultMaxBatchRecordBytes int64 = 64 << 20
+
+// BatchResultsOptions tunes DecodeBatchResultsWithOptions.
+type BatchResultsOptions struct {
+	// MaxRecordBytes bounds one JSONL record, delimiter included. Zero uses
+	// DefaultMaxBatchRecordBytes; positive values override the default.
+	MaxRecordBytes int64
+}
+
+// DecodeBatchResults consumes batch output JSONL one result at a time, with
+// DefaultMaxBatchRecordBytes per record. Memory stays bounded by the current
+// record and the consumer's work; the complete file is never materialized.
+func DecodeBatchResults[T any](r io.Reader, consume func(BatchResult[T]) error) error {
+	return DecodeBatchResultsWithOptions(r, BatchResultsOptions{}, consume)
+}
+
+// DecodeBatchResultsWithOptions is DecodeBatchResults with an explicit record
+// size bound, for output files whose lines are known to be unusually large.
+func DecodeBatchResultsWithOptions[T any](r io.Reader, opts BatchResultsOptions, consume func(BatchResult[T]) error) error {
+	if r == nil {
+		return fmt.Errorf("%w: batch results reader is required", ErrInvalidRequest)
+	}
+	if consume == nil {
+		return fmt.Errorf("%w: batch results consumer is required", ErrInvalidRequest)
+	}
+	if opts.MaxRecordBytes < 0 {
+		return fmt.Errorf("%w: max record bytes must not be negative", ErrInvalidRequest)
+	}
+	limit := opts.MaxRecordBytes
+	if limit == 0 {
+		limit = DefaultMaxBatchRecordBytes
+	}
+	reader := bufio.NewReader(r)
+	var lineNumber int
+	for {
+		line, readErr := readBoundedLine(reader, limit)
+		if errors.Is(readErr, errReadLimitExceeded) {
+			return fmt.Errorf("mistral: batch result line %d exceeds %d bytes", lineNumber+1, limit)
 		}
-		var raw batchResultLine
-		if err := json.Unmarshal(line, &raw); err != nil {
-			return nil, fmt.Errorf("mistral: parse batch result line: %w", err)
-		}
-		res := BatchResult[T]{ID: raw.ID, CustomID: raw.CustomID}
-		if len(raw.Error) > 0 && string(raw.Error) != "null" {
-			res.Error = raw.Error
-		}
-		if raw.Response != nil {
-			res.StatusCode = raw.Response.StatusCode
-			if raw.Response.StatusCode == http.StatusOK && len(raw.Response.Body) > 0 {
-				body, err := ParseJSON[T](string(raw.Response.Body))
-				if err != nil {
-					return nil, fmt.Errorf("mistral: parse result body (custom_id %q): %w", raw.CustomID, err)
-				}
-				res.Body = body
+		if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
+			lineNumber++
+			res, err := parseBatchResultLine[T](trimmed)
+			if err != nil {
+				return fmt.Errorf("mistral: parse batch result line %d (custom_id unknown): %w", lineNumber, err)
+			}
+			if err := consume(res); err != nil {
+				return fmt.Errorf("mistral: consume batch result line %d (custom_id %q): %w", lineNumber, res.CustomID, err)
 			}
 		}
-		out = append(out, res)
+		if readErr != nil {
+			if readErr == io.EOF {
+				return nil
+			}
+			return fmt.Errorf("mistral: read batch results after line %d: %w", lineNumber, readErr)
+		}
 	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("mistral: scan batch results: %w", err)
+}
+
+func parseBatchResultLine[T any](line []byte) (BatchResult[T], error) {
+	var raw batchResultLine
+	if err := json.Unmarshal(line, &raw); err != nil {
+		return BatchResult[T]{}, err
 	}
-	return out, nil
+	res := BatchResult[T]{ID: raw.ID, CustomID: raw.CustomID}
+	if len(raw.Error) > 0 && string(raw.Error) != "null" {
+		res.Error = raw.Error
+	}
+	if raw.Response != nil {
+		res.StatusCode = raw.Response.StatusCode
+		if raw.Response.StatusCode == http.StatusOK && len(raw.Response.Body) > 0 {
+			if err := json.Unmarshal(raw.Response.Body, &res.Body); err != nil {
+				return BatchResult[T]{}, fmt.Errorf("parse result body (custom_id %q): %w", raw.CustomID, err)
+			}
+		}
+	}
+	return res, nil
 }
 
 // ResultsByCustomID indexes parsed batch results by their custom id. When custom

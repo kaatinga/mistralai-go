@@ -2,13 +2,16 @@ package mistralai
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
 
 // Chat message role values for ChatMessage.Role.
 const (
+	ChatModelMistralSmallLatest  = "mistral-small-latest"
+	ChatModelMistralMediumLatest = "mistral-medium-latest"
+	DefaultChatModel             = ChatModelMistralSmallLatest
+
 	RoleSystem    = "system"
 	RoleUser      = "user"
 	RoleAssistant = "assistant"
@@ -100,9 +103,6 @@ type ChatCompletionRequest struct {
 	Temperature *float64      `json:"temperature,omitempty"`
 	MaxTokens   int           `json:"max_tokens,omitempty"`
 	TopP        *float64      `json:"top_p,omitempty"`
-	// Stream is reserved for SSE streaming, which this client does not support
-	// yet; ChatCompletion returns an error when it is set.
-	Stream bool `json:"stream,omitempty"`
 	// Stop lists tokens that end generation when detected.
 	Stop []string `json:"stop,omitempty"`
 	// RandomSeed makes sampling deterministic across calls when set.
@@ -191,28 +191,9 @@ type ChatCompletionResponse struct {
 	Usage   UsageInfo                      `json:"usage"`
 }
 
-// AllChoicesContent concatenates assistant content from every choice.
-func (r ChatCompletionResponse) AllChoicesContent() string {
-	var b strings.Builder
-	for _, c := range r.Choices {
-		if c.Message.Content == nil {
-			continue
-		}
-		if s, ok := c.Message.Content.(string); ok {
-			b.WriteString(s)
-			continue
-		}
-		encoded, err := json.Marshal(c.Message.Content)
-		if err != nil {
-			continue
-		}
-		b.Write(encoded)
-	}
-	return b.String()
-}
-
-// FirstChoiceContent returns trimmed content from the first choice, or an error if missing/empty.
-func (r ChatCompletionResponse) FirstChoiceContent() (string, error) {
+// FirstText returns the non-empty text from the first choice. Multipart text
+// parts are concatenated; tool-call-only and non-text choices return an error.
+func (r ChatCompletionResponse) FirstText() (string, error) {
 	choice, err := r.FirstChoice()
 	if err != nil {
 		return "", err
@@ -220,40 +201,67 @@ func (r ChatCompletionResponse) FirstChoiceContent() (string, error) {
 	if choice.HasToolCalls() {
 		return "", fmt.Errorf("mistral: choice has tool_calls, no text content yet")
 	}
-	raw := choice.Message.Content
-	content, ok := raw.(string)
-	if !ok {
-		if raw == nil {
-			return "", fmt.Errorf("mistral: chat response has empty content")
+	var content strings.Builder
+	switch value := choice.Message.Content.(type) {
+	case string:
+		content.WriteString(value)
+	case TextContent:
+		content.WriteString(string(value))
+	case []ChatMessageContentPart:
+		for _, part := range value {
+			if part.Type == ContentPartText {
+				content.WriteString(part.Text)
+			}
 		}
-		encoded, err := json.Marshal(raw)
-		if err != nil {
-			return "", fmt.Errorf("mistral: chat response has unsupported content type")
-		}
-		content = string(encoded)
+	case nil:
+		return "", fmt.Errorf("mistral: chat response has empty content")
+	default:
+		return "", fmt.Errorf("mistral: chat response has unsupported content type %T", value)
 	}
-	content = strings.TrimSpace(content)
-	if content == "" {
+	text := strings.TrimSpace(content.String())
+	if text == "" {
 		return "", fmt.Errorf("mistral: chat response has empty content")
 	}
-	return content, nil
+	return text, nil
 }
 
 // ChatCompletion runs POST /v1/chat/completions with full message control.
 func (c *Client) ChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error) {
-	if strings.TrimSpace(req.Model) == "" {
-		return ChatCompletionResponse{}, fmt.Errorf("%w: model is required", ErrInvalidRequest)
-	}
-	if len(req.Messages) == 0 {
-		return ChatCompletionResponse{}, fmt.Errorf("%w: messages are required", ErrInvalidRequest)
-	}
-	if req.Stream {
-		return ChatCompletionResponse{}, fmt.Errorf("%w: streaming is not supported yet; leave Stream unset", ErrInvalidRequest)
+	if err := req.validate(); err != nil {
+		return ChatCompletionResponse{}, err
 	}
 
 	var resp ChatCompletionResponse
-	if err := c.postJSON(ctx, "/v1/chat/completions", req, &resp); err != nil {
+	if err := c.postJSON(ctx, pathChatCompletions, req, &resp); err != nil {
 		return ChatCompletionResponse{}, fmt.Errorf("mistral: chat completion: %w", err)
 	}
 	return resp, nil
+}
+
+func (r ChatCompletionRequest) validate() error {
+	if strings.TrimSpace(r.Model) == "" {
+		return fmt.Errorf("%w: model is required", ErrInvalidRequest)
+	}
+	if len(r.Messages) == 0 {
+		return fmt.Errorf("%w: messages are required", ErrInvalidRequest)
+	}
+	for index, message := range r.Messages {
+		if err := message.validate(); err != nil {
+			return fmt.Errorf("%w: message %d: %v", ErrInvalidRequest, index, err)
+		}
+	}
+	if err := r.ToolChoice.validate(); err != nil {
+		return err
+	}
+	seenTools := make(map[string]struct{}, len(r.Tools))
+	for index, tool := range r.Tools {
+		if tool.Type != ToolTypeFunction || strings.TrimSpace(tool.Function.Name) == "" {
+			return fmt.Errorf("%w: tool %d is invalid", ErrInvalidRequest, index)
+		}
+		if _, duplicate := seenTools[tool.Function.Name]; duplicate {
+			return fmt.Errorf("%w: duplicate tool name %q", ErrInvalidRequest, tool.Function.Name)
+		}
+		seenTools[tool.Function.Name] = struct{}{}
+	}
+	return nil
 }

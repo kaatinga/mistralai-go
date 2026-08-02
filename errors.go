@@ -14,30 +14,36 @@ import (
 // surface as *APIError.
 var ErrInvalidRequest = errors.New("mistral: invalid request")
 
-// APIError is returned when the Mistral API responds with a non-200 status.
+// APIError is returned when the Mistral API responds with a non-2xx status.
 // Inspect it with errors.As:
 //
 //	var apiErr *mistralai.APIError
 //	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized {
 //		// handle bad API key
 //	}
+//
+// Transport and response-read failures never produce an APIError: there is no
+// status to report, so the underlying error (e.g. context.DeadlineExceeded) is
+// returned wrapped only in package context and stays matchable with errors.Is.
 type APIError struct {
 	// StatusCode is the HTTP status code of the response.
 	StatusCode int
+	// RequestID is the provider request identifier, when present.
+	RequestID string
 	// Message is the human-readable message from the API, when present.
 	Message string
 	// Type is the Mistral error type (e.g. "invalid_request_error"), when present.
 	Type string
 	// Code is the Mistral error code, when present.
 	Code string
-	// Body is the raw response body.
-	Body []byte
+	// BodyFragment is a bounded fragment of the response body.
+	BodyFragment string
 }
 
 func (e *APIError) Error() string {
 	msg := e.Message
 	if msg == "" {
-		msg = strings.TrimSpace(string(e.Body))
+		msg = strings.TrimSpace(e.BodyFragment)
 	}
 	if msg == "" {
 		msg = http.StatusText(e.StatusCode)
@@ -50,8 +56,20 @@ func (e *APIError) Retryable() bool {
 	return isRetryStatusCode(e.StatusCode)
 }
 
-func apiError(status int, body []byte) *APIError {
-	e := &APIError{StatusCode: status, Body: body}
+func apiError(status int, body []byte, header ...http.Header) *APIError {
+	var headers http.Header
+	if len(header) > 0 {
+		headers = header[0]
+	}
+	requestID := headers.Get("X-Request-ID")
+	if requestID == "" {
+		requestID = headers.Get("Mistral-Request-ID")
+	}
+	e := &APIError{
+		StatusCode:   status,
+		RequestID:    requestID,
+		BodyFragment: string(body),
+	}
 	var parsed apiErrorResponse
 	if err := json.Unmarshal(body, &parsed); err == nil {
 		e.Message = parsed.messageText()

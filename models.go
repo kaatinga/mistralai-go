@@ -4,25 +4,22 @@ import "encoding/json"
 
 // API DTOs aligned with https://github.com/mistralai/platform-docs-public OpenAPI.
 
-type uploadFileResponse struct {
-	ID       string `json:"id"`
-	Object   string `json:"object"`
-	Bytes    int64  `json:"bytes"`
-	Filename string `json:"filename"`
-	Purpose  string `json:"purpose"`
-}
-
 type ocrRequestBody struct {
-	Model                    string          `json:"model"`
-	Document                 ocrDocument     `json:"document"`
-	Pages                    []int           `json:"pages,omitempty"`
-	ID                       string          `json:"id,omitempty"`
-	TableFmt                 string          `json:"table_format,omitempty"`
-	Include                  *bool           `json:"include_image_base64,omitempty"`
-	ExtractH                 *bool           `json:"extract_header,omitempty"`
-	ExtractF                 *bool           `json:"extract_footer,omitempty"`
-	DocumentAnnotationFormat *ResponseFormat `json:"document_annotation_format,omitempty"`
-	DocumentAnnotationPrompt *string         `json:"document_annotation_prompt,omitempty"`
+	Model                       string          `json:"model"`
+	Document                    ocrDocument     `json:"document"`
+	Pages                       []int           `json:"pages,omitempty"`
+	ID                          string          `json:"id,omitempty"`
+	TableFmt                    string          `json:"table_format,omitempty"`
+	Include                     *bool           `json:"include_image_base64,omitempty"`
+	ImageLimit                  *int            `json:"image_limit,omitempty"`
+	ImageMinSize                *int            `json:"image_min_size,omitempty"`
+	BBoxAnnotationFormat        *ResponseFormat `json:"bbox_annotation_format,omitempty"`
+	IncludeBlocks               *bool           `json:"include_blocks,omitempty"`
+	ConfidenceScoresGranularity string          `json:"confidence_scores_granularity,omitempty"`
+	ExtractH                    *bool           `json:"extract_header,omitempty"`
+	ExtractF                    *bool           `json:"extract_footer,omitempty"`
+	DocumentAnnotationFormat    *ResponseFormat `json:"document_annotation_format,omitempty"`
+	DocumentAnnotationPrompt    *string         `json:"document_annotation_prompt,omitempty"`
 }
 
 // Response format type values for ResponseFormat.Type.
@@ -40,8 +37,8 @@ type ResponseFormat struct {
 }
 
 // JSONSchemaFormat builds a strict json_schema response_format from a schema
-// name and a JSON Schema document. Use it for ChatCompletionRequest.ResponseFormat,
-// ChatRequest.ResponseFormat, and OCRRequest.DocumentAnnotationFormat.
+// name and a JSON Schema document. Use it for ChatCompletionRequest.ResponseFormat
+// and OCRRequest.DocumentAnnotationFormat.
 func JSONSchemaFormat(name string, schema map[string]any) *ResponseFormat {
 	return &ResponseFormat{
 		Type: ResponseFormatJSONSchema,
@@ -83,31 +80,49 @@ type apiErrorResponse struct {
 
 // OCRPage is one page from a Mistral OCR response.
 type OCRPage struct {
-	Index      int                `json:"index"`
-	Markdown   string             `json:"markdown"`
-	Images     []OCRImage         `json:"images,omitempty"`
-	Tables     []OCRTable         `json:"tables,omitempty"`
-	Hyperlinks []string           `json:"hyperlinks,omitempty"`
-	Header     *string            `json:"header,omitempty"`
-	Footer     *string            `json:"footer,omitempty"`
-	Dimensions *OCRPageDimensions `json:"dimensions,omitempty"`
+	Index           int                `json:"index"`
+	Markdown        string             `json:"markdown"`
+	Images          []OCRImage         `json:"images,omitempty"`
+	Tables          []OCRTable         `json:"tables,omitempty"`
+	Hyperlinks      []string           `json:"hyperlinks,omitempty"`
+	Header          *string            `json:"header,omitempty"`
+	Footer          *string            `json:"footer,omitempty"`
+	Dimensions      *OCRPageDimensions `json:"dimensions,omitempty"`
+	Blocks          []OCRBlock         `json:"blocks,omitempty"`
+	ConfidenceScore *float64           `json:"confidence_score,omitempty"`
 }
 
 // OCRImage is an extracted image on an OCR page.
 type OCRImage struct {
-	ID           string `json:"id"`
-	TopLeftX     int    `json:"top_left_x"`
-	TopLeftY     int    `json:"top_left_y"`
-	BottomRightX int    `json:"bottom_right_x"`
-	BottomRightY int    `json:"bottom_right_y"`
-	ImageBase64  string `json:"image_base64,omitempty"`
+	ID              string   `json:"id"`
+	TopLeftX        int      `json:"top_left_x"`
+	TopLeftY        int      `json:"top_left_y"`
+	BottomRightX    int      `json:"bottom_right_x"`
+	BottomRightY    int      `json:"bottom_right_y"`
+	ImageBase64     string   `json:"image_base64,omitempty"`
+	ConfidenceScore *float64 `json:"confidence_score,omitempty"`
+}
+
+// OCRBlock is a bounding-box annotated OCR block.
+type OCRBlock struct {
+	ID              string     `json:"id"`
+	Type            string     `json:"type"`
+	Text            string     `json:"text"`
+	BoundingBox     []OCRPoint `json:"bounding_box,omitempty"`
+	ConfidenceScore *float64   `json:"confidence_score,omitempty"`
+}
+
+type OCRPoint struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
 }
 
 // OCRTable is an extracted table on an OCR page.
 type OCRTable struct {
-	ID      string `json:"id"`
-	Content string `json:"content"`
-	Format  string `json:"format"`
+	ID              string   `json:"id"`
+	Content         string   `json:"content"`
+	Format          string   `json:"format"`
+	ConfidenceScore *float64 `json:"confidence_score,omitempty"`
 }
 
 // OCRPageDimensions holds page size metadata from OCR.

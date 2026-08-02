@@ -1,0 +1,36 @@
+{
+  "uploaded_file": {
+    "model": "mistral-ocr-latest",
+    "document": {
+      "type": "file",
+      "file_id": "file-123"
+    }
+  },
+  "document_url": {
+    "model": "mistral-ocr-latest",
+    "document": {
+      "type": "document_url",
+      "document_url": "https://example.test/invoice.pdf",
+      "document_name": "invoice.pdf"
+    }
+  },
+  "image_url": {
+    "model": "mistral-ocr-latest",
+    "document": {
+      "type": "image_url",
+      "image_url": "https://example.test/invoice.png"
+    }
+  },
+  "local_file": {
+    "operation": "upload then OCR",
+    "upload": {
+      "purpose": "ocr",
+      "filename": "invoice.pdf",
+      "content_type": "application/pdf"
+    },
+    "ocr": {
+      "type": "file",
+      "file_id": "<uploaded file id>"
+    }
+  }
+}

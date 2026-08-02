@@ -1,0 +1,33 @@
+{
+  "text": {
+    "role": "user",
+    "content": "hello"
+  },
+  "multipart": {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Read this document"
+      },
+      {
+        "type": "file",
+        "file_id": "file-123"
+      },
+      {
+        "type": "image_url",
+        "image_url": "https://example.test/image.png"
+      },
+      {
+        "type": "document_url",
+        "document_url": "https://example.test/invoice.pdf"
+      }
+    ]
+  },
+  "tool": {
+    "role": "tool",
+    "tool_call_id": "call-123",
+    "name": "lookup",
+    "content": "{\"ok\":true}"
+  }
+}

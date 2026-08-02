@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,10 +22,12 @@ func TestBuildBatchInputJSONL(t *testing.T) {
 		Entry("1", map[string]any{"input": "raw body"}),
 	}
 
-	data, err := BuildBatchInputJSONL(entries)
+	var output bytes.Buffer
+	err := EncodeBatchEntries(&output, entries)
 	if err != nil {
 		t.Fatal(err)
 	}
+	data := output.Bytes()
 
 	var lines []batchResultLineStub
 	sc := bufio.NewScanner(bytes.NewReader(data))
@@ -75,10 +78,12 @@ func TestBuildBatchInputJSONL_toolsRoundTrip(t *testing.T) {
 		}),
 	}
 
-	data, err := BuildBatchInputJSONL(entries)
+	var output bytes.Buffer
+	err := EncodeBatchEntries(&output, entries)
 	if err != nil {
 		t.Fatal(err)
 	}
+	data := output.Bytes()
 
 	var lines []batchResultLineStub
 	sc := bufio.NewScanner(bytes.NewReader(data))
@@ -120,7 +125,7 @@ func TestBuildBatchInputJSONL_errors(t *testing.T) {
 	}
 	for name, entries := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := BuildBatchInputJSONL(entries); err == nil {
+			if err := EncodeBatchEntries(io.Discard, entries); err == nil {
 				t.Fatal("expected error")
 			}
 		})
@@ -128,10 +133,14 @@ func TestBuildBatchInputJSONL_errors(t *testing.T) {
 }
 
 func TestOCREntry(t *testing.T) {
-	entry := OCREntry("0", "", "file-doc",
-		WithOCRPages(0, 1),
-		WithOCRExtractHeader(true),
-	)
+	entry, err := OCREntry("0", OCRRequest{
+		Source:        UploadedFile{FileID: "file-doc"},
+		Pages:         []int{0, 1},
+		ExtractHeader: new(true),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	body, ok := entry.Body.(ocrRequestBody)
 	if !ok {
 		t.Fatalf("body type = %T", entry.Body)
@@ -144,6 +153,34 @@ func TestOCREntry(t *testing.T) {
 	}
 	if len(body.Pages) != 2 || body.ExtractH == nil || !*body.ExtractH {
 		t.Errorf("options not applied: %+v", body)
+	}
+}
+
+// A rejected OCR entry must say why at construction, not surface later as a
+// generic "body is required" from the JSONL encoder.
+func TestOCREntry_rejectsInvalidRequests(t *testing.T) {
+	cases := map[string]OCRRequest{
+		"local file":      {Source: LocalFile{Name: "a.pdf", Reader: strings.NewReader("x")}},
+		"nil source":      {},
+		"empty file id":   {Source: UploadedFile{}},
+		"prompt w/o fmt":  {Source: UploadedFile{FileID: "f"}, DocumentAnnotationPrompt: "extract"},
+		"negative limit":  {Source: UploadedFile{FileID: "f"}, ImageLimit: new(-1)},
+		"unknown sources": {Source: DocumentURL{}},
+	}
+	for name, req := range cases {
+		t.Run(name, func(t *testing.T) {
+			entry, err := OCREntry("0", req)
+			if !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("err = %v", err)
+			}
+			if entry.Body != nil || entry.CustomID != "" {
+				t.Fatalf("entry = %+v, want zero value", entry)
+			}
+		})
+	}
+
+	if _, err := OCREntry("0", OCRRequest{Source: LocalFile{Name: "a.pdf", Reader: strings.NewReader("x")}}); !strings.Contains(err.Error(), "LocalFile") {
+		t.Fatalf("LocalFile rejection should name the source: %v", err)
 	}
 }
 
@@ -196,9 +233,10 @@ func TestUploadBatchInput(t *testing.T) {
 		t.Errorf("purpose = %q", gotPurpose)
 	}
 
-	want, _ := BuildBatchInputJSONL(entries)
-	if !bytes.Equal(uploaded, want) {
-		t.Errorf("uploaded bytes mismatch:\n got %q\nwant %q", uploaded, want)
+	var want bytes.Buffer
+	_ = EncodeBatchEntries(&want, entries)
+	if !bytes.Equal(uploaded, want.Bytes()) {
+		t.Errorf("uploaded bytes mismatch:\n got %q\nwant %q", uploaded, want.Bytes())
 	}
 
 	if _, err := cl.UploadBatchInput(context.Background(), " ", entries); err == nil {
@@ -211,14 +249,15 @@ func TestUploadBatchInput(t *testing.T) {
 
 // ensure JSONL has one object per line (no embedded newlines within an object).
 func TestBuildBatchInputJSONL_oneObjectPerLine(t *testing.T) {
-	data, err := BuildBatchInputJSONL([]BatchEntry{
+	var output bytes.Buffer
+	err := EncodeBatchEntries(&output, []BatchEntry{
 		Entry("0", map[string]any{"a": 1}),
 		Entry("1", map[string]any{"b": 2}),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Count(string(data), "\n"); got != 2 {
+	if got := strings.Count(output.String(), "\n"); got != 2 {
 		t.Errorf("newline count = %d, want 2", got)
 	}
 }

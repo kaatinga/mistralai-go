@@ -3,6 +3,7 @@ package mistralai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -106,14 +107,14 @@ func TestHasToolCallsAndFirstChoice(t *testing.T) {
 		t.Fatal("expected tool calls from FirstChoice")
 	}
 
-	if _, err := resp.FirstChoiceContent(); err == nil || !strings.Contains(err.Error(), "tool_calls") {
-		t.Fatalf("FirstChoiceContent err = %v", err)
+	if _, err := resp.FirstText(); err == nil || !strings.Contains(err.Error(), "tool_calls") {
+		t.Fatalf("FirstText err = %v", err)
 	}
 
 	textResp := ChatCompletionResponse{
 		Choices: []ChatCompletionResponseChoice{text},
 	}
-	got, err := textResp.FirstChoiceContent()
+	got, err := textResp.FirstText()
 	if err != nil || got != "hello" {
 		t.Fatalf("content = %q err = %v", got, err)
 	}
@@ -192,5 +193,52 @@ func TestToolChoice_zeroValueOmitted(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"tool_choice":"any"`) {
 		t.Fatalf("mode tool_choice = %s", data)
+	}
+}
+
+// The set of tool_choice modes is not closed: a mode the API adds after this
+// release must survive a marshal/unmarshal round trip instead of failing to
+// decode in an already-published SDK (see the doc.go validation policy).
+func TestToolChoice_unknownModeRoundTrips(t *testing.T) {
+	const futureMode = "required"
+
+	data, err := json.Marshal(ChatCompletionRequest{
+		Model:      "m",
+		Messages:   []ChatMessage{TextMessage(RoleUser, "hi")},
+		ToolChoice: ToolChoiceMode(futureMode),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"tool_choice":"`+futureMode+`"`) {
+		t.Fatalf("request = %s", data)
+	}
+
+	var decoded ChatCompletionRequest
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("decode unknown mode: %v", err)
+	}
+	if decoded.ToolChoice != ToolChoiceMode(futureMode) {
+		t.Fatalf("tool_choice = %#v", decoded.ToolChoice)
+	}
+
+	// A request carrying it must still pass client-side validation.
+	if err := decoded.validate(); err != nil {
+		t.Fatalf("validate = %v", err)
+	}
+}
+
+// Structural defects are still rejected: an empty mode and a named choice
+// without a function name are not valid tool_choice values.
+func TestToolChoice_structuralErrors(t *testing.T) {
+	if err := (ToolChoiceMode("")).validate(); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("empty mode err = %v", err)
+	}
+	var named ToolChoice
+	if err := json.Unmarshal([]byte(`{"type":"function","function":{}}`), &named); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("nameless function err = %v", err)
+	}
+	if err := json.Unmarshal([]byte(`[1,2]`), &named); err == nil {
+		t.Fatal("expected error for non-union payload")
 	}
 }

@@ -76,8 +76,51 @@ func (r ListFilesRequest) queryValues() url.Values {
 // ListFiles returns files for the API key (GET /v1/files).
 func (c *Client) ListFiles(ctx context.Context, req ListFilesRequest) (FileList, error) {
 	var list FileList
-	if err := c.getJSON(ctx, "/v1/files", req.queryValues(), &list); err != nil {
+	if err := c.getJSON(ctx, pathFiles, req.queryValues(), &list); err != nil {
 		return FileList{}, fmt.Errorf("mistral: list files: %w", err)
 	}
 	return list, nil
+}
+
+// GetFile fetches file metadata (GET /v1/files/{file_id}).
+func (c *Client) GetFile(ctx context.Context, fileID string) (File, error) {
+	id, err := pathID("file id", fileID)
+	if err != nil {
+		return File{}, err
+	}
+	var file File
+	if err := c.getJSON(ctx, pathFiles+"/"+id, nil, &file); err != nil {
+		return File{}, fmt.Errorf("mistral: get file: %w", err)
+	}
+	return file, nil
+}
+
+// FileSignedURL is the response from GET /v1/files/{file_id}/url.
+type FileSignedURL struct {
+	URL string `json:"url"`
+}
+
+// GetFileSignedURL returns a temporary signed download URL. expiryHours is the
+// number of hours before the URL becomes invalid; nil lets the API apply its
+// own default of 24 hours.
+func (c *Client) GetFileSignedURL(ctx context.Context, fileID string, expiryHours *int) (FileSignedURL, error) {
+	id, err := pathID("file id", fileID)
+	if err != nil {
+		return FileSignedURL{}, err
+	}
+	if expiryHours != nil && *expiryHours <= 0 {
+		return FileSignedURL{}, fmt.Errorf("%w: expiry hours must be positive", ErrInvalidRequest)
+	}
+	query := url.Values{}
+	if expiryHours != nil {
+		query.Set("expiry", strconv.Itoa(*expiryHours))
+	}
+	var signed FileSignedURL
+	if err := c.getJSON(ctx, pathFiles+"/"+id+"/url", query, &signed); err != nil {
+		return FileSignedURL{}, fmt.Errorf("mistral: get file signed url: %w", err)
+	}
+	if signed.URL == "" {
+		return FileSignedURL{}, fmt.Errorf("mistral: signed URL response missing url")
+	}
+	return signed, nil
 }

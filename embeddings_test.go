@@ -37,13 +37,13 @@ func TestEmbeddings_singleAndBatch(t *testing.T) {
 		if body.Model != EmbeddingModelMistralEmbed {
 			t.Errorf("model = %q", body.Model)
 		}
-		if body.EncodingFormat != EncodingFormatFloat {
+		if body.EncodingFormat != string(EncodingFormatFloat) {
 			t.Errorf("encoding_format = %q", body.EncodingFormat)
 		}
 		if body.OutputDimension == nil || *body.OutputDimension != 512 {
 			t.Errorf("output_dimension = %v", body.OutputDimension)
 		}
-		if body.OutputDType != OutputDTypeFloat {
+		if body.OutputDType != string(OutputDTypeFloat) {
 			t.Errorf("output_dtype = %q", body.OutputDType)
 		}
 		if body.Metadata["source"] != "test" {
@@ -76,7 +76,7 @@ func TestEmbeddings_singleAndBatch(t *testing.T) {
 	dim := 512
 	resp, err := cl.Embeddings(context.Background(), EmbeddingRequest{
 		Model:           EmbeddingModelMistralEmbed,
-		Input:           EmbeddingInputStrings("first", "second"),
+		Input:           []string{"first", "second"},
 		EncodingFormat:  EncodingFormatFloat,
 		OutputDimension: &dim,
 		OutputDType:     OutputDTypeFloat,
@@ -100,8 +100,8 @@ func TestEmbeddings_singleAndBatch(t *testing.T) {
 func TestEmbeddings_singleInput(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Model string `json:"model"`
-			Input string `json:"input"`
+			Model string   `json:"model"`
+			Input []string `json:"input"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
@@ -109,7 +109,7 @@ func TestEmbeddings_singleInput(t *testing.T) {
 		if body.Model != EmbeddingModelMistralEmbed {
 			t.Errorf("model = %q", body.Model)
 		}
-		if body.Input != "hello" {
+		if len(body.Input) != 1 || body.Input[0] != "hello" {
 			t.Errorf("input = %q", body.Input)
 		}
 		_ = json.NewEncoder(w).Encode(EmbeddingResponse{
@@ -129,7 +129,7 @@ func TestEmbeddings_singleInput(t *testing.T) {
 
 	resp, err := cl.Embeddings(context.Background(), EmbeddingRequest{
 		Model: EmbeddingModelMistralEmbed,
-		Input: EmbeddingInputString("hello"),
+		Input: []string{"hello"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +164,7 @@ func TestEmbeddings_base64Encoding(t *testing.T) {
 
 	resp, err := cl.Embeddings(context.Background(), EmbeddingRequest{
 		Model:          EmbeddingModelMistralEmbed,
-		Input:          EmbeddingInputString("x"),
+		Input:          []string{"x"},
 		EncodingFormat: EncodingFormatBase64,
 	})
 	if err != nil {
@@ -190,10 +190,10 @@ func TestEmbeddings_validation(t *testing.T) {
 		req  EmbeddingRequest
 		want string
 	}{
-		{"missing model", EmbeddingRequest{Input: EmbeddingInputString("x")}, "model is required"},
+		{"missing model", EmbeddingRequest{Input: []string{"x"}}, "model is required"},
 		{"missing input", EmbeddingRequest{Model: "mistral-embed"}, "input is required"},
-		{"empty string", EmbeddingRequest{Model: "mistral-embed", Input: EmbeddingInputString("  ")}, "input is required"},
-		{"empty batch", EmbeddingRequest{Model: "mistral-embed", Input: EmbeddingInputStrings()}, "input is required"},
+		{"empty string", EmbeddingRequest{Model: "mistral-embed", Input: []string{"  "}}, "input 0 is required"},
+		{"empty batch", EmbeddingRequest{Model: "mistral-embed", Input: []string{}}, "input is required"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -209,17 +209,79 @@ func TestEmbeddings_validation(t *testing.T) {
 }
 
 func TestEmbeddingEntry_batchJSONL(t *testing.T) {
-	jsonl, err := BuildBatchInputJSONL([]BatchEntry{
+	var jsonl strings.Builder
+	err := EncodeBatchEntries(&jsonl, []BatchEntry{
 		EmbeddingEntry("e1", EmbeddingRequest{
 			Model: EmbeddingModelMistralEmbed,
-			Input: EmbeddingInputString("doc"),
+			Input: []string{"doc"},
 		}),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(jsonl), `"custom_id":"e1"`) || !strings.Contains(string(jsonl), `"model":"mistral-embed"`) {
-		t.Fatalf("jsonl = %s", jsonl)
+	if !strings.Contains(jsonl.String(), `"custom_id":"e1"`) || !strings.Contains(jsonl.String(), `"model":"mistral-embed"`) {
+		t.Fatalf("jsonl = %s", jsonl.String())
+	}
+}
+
+func TestEmbeddingVectors_validateIndexAndDType(t *testing.T) {
+	response := EmbeddingResponse{
+		OutputDType: OutputDTypeFloat,
+		Data: []EmbeddingData{
+			{Index: 1, Embedding: mustJSON(t, []float64{2})},
+			{Index: 0, Embedding: mustJSON(t, []float64{1})},
+		},
+	}
+	vectors, err := response.Float64Vectors()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(vectors, [][]float64{{1}, {2}}) {
+		t.Fatalf("vectors = %v", vectors)
+	}
+	vectors32, err := response.Float32Vectors()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(vectors32, [][]float32{{1}, {2}}) {
+		t.Fatalf("float32 vectors = %v", vectors32)
+	}
+
+	response.OutputDType = OutputDTypeInt8
+	if _, err := response.Float64Vectors(); err == nil {
+		t.Fatal("expected dtype mismatch")
+	} else {
+		var typeErr *ErrEmbeddingType
+		if !errors.As(err, &typeErr) {
+			t.Fatalf("error = %v, want ErrEmbeddingType", err)
+		}
+	}
+
+	response = EmbeddingResponse{Data: []EmbeddingData{
+		{Index: 0, Embedding: mustJSON(t, []int8{-1, 2})},
+		{Index: 0, Embedding: mustJSON(t, []int8{3})},
+	}}
+	if _, err := response.Int8Vectors(); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("error = %v, want duplicate index error", err)
+	}
+}
+
+func TestEmbeddingQuantizedBase64Decoders(t *testing.T) {
+	raw := []byte{0, 255, 3}
+	data := EmbeddingData{Embedding: mustJSON(t, base64.StdEncoding.EncodeToString(raw))}
+	got, err := data.Uint8s()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, []uint8{0, 255, 3}) {
+		t.Fatalf("uint8 = %v", got)
+	}
+	bits, err := data.Binary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(bits, raw) {
+		t.Fatalf("binary = %v", bits)
 	}
 }
 

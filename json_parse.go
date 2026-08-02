@@ -47,7 +47,7 @@ func ChatStructured[T any](ctx context.Context, c ChatCompleter, req ChatComplet
 	if err != nil {
 		return zero, resp, err
 	}
-	content, err := resp.FirstChoiceContent()
+	content, err := resp.FirstText()
 	if err != nil {
 		return zero, resp, err
 	}

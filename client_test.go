@@ -85,9 +85,7 @@ func TestOCR_uploadAndOCR(t *testing.T) {
 
 	ctx := context.Background()
 	result, err := cl.OCR(ctx, OCRRequest{
-		Filename:    "doc.pdf",
-		Content:     bytes.NewReader([]byte("%PDF-1.4 test")),
-		ContentType: "application/pdf",
+		Source: LocalFile{Name: "doc.pdf", Reader: bytes.NewReader([]byte("%PDF-1.4 test")), ContentType: "application/pdf"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -194,8 +192,7 @@ func TestOCR_apiError(t *testing.T) {
 	}
 
 	_, err = cl.OCR(context.Background(), OCRRequest{
-		Filename: "x.pdf",
-		Content:  bytes.NewReader([]byte("x")),
+		Source: LocalFile{Name: "x.pdf", Reader: bytes.NewReader([]byte("x"))},
 	})
 	if err == nil || !strings.Contains(err.Error(), "invalid document") {
 		t.Fatalf("err = %v", err)
@@ -228,96 +225,6 @@ func TestNewClient_requiresAPIKey(t *testing.T) {
 	}
 	if _, err := NewClient("   "); err == nil {
 		t.Fatal("expected error for whitespace key")
-	}
-}
-
-func TestChat_textMarkdownJSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/chat/completions" || r.Method != http.MethodPost {
-			http.NotFound(w, r)
-			return
-		}
-		var body ChatCompletionRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		if body.Model != DefaultChatModel {
-			t.Errorf("model = %q", body.Model)
-		}
-		if len(body.Messages) < 1 || body.Messages[len(body.Messages)-1].Role != "user" {
-			t.Fatalf("messages = %+v", body.Messages)
-		}
-
-		var content string
-		switch body.Messages[len(body.Messages)-1].Content {
-		case "plain":
-			if body.ResponseFormat != nil {
-				t.Fatalf("text: response_format = %+v", body.ResponseFormat)
-			}
-			content = "hello"
-		case "md":
-			if body.ResponseFormat != nil {
-				t.Fatalf("markdown: response_format = %+v", body.ResponseFormat)
-			}
-			sysContent, _ := body.Messages[0].Content.(string)
-			if !strings.Contains(sysContent, "Markdown") {
-				t.Errorf("system = %q", sysContent)
-			}
-			content = "# Title"
-		case "json":
-			if body.ResponseFormat == nil || body.ResponseFormat.Type != "json_object" {
-				t.Fatalf("json: response_format = %+v", body.ResponseFormat)
-			}
-			content = `{"ok":true}`
-		default:
-			t.Fatalf("unexpected input %q", body.Messages[len(body.Messages)-1].Content)
-		}
-
-		_ = json.NewEncoder(w).Encode(ChatCompletionResponse{
-			Model: "mistral-small-latest",
-			Choices: []ChatCompletionResponseChoice{{
-				Message: ChatMessage{Role: "assistant", Content: content},
-			}},
-		})
-	}))
-	defer srv.Close()
-
-	cl, err := NewClient("test-key", WithBaseURL(srv.URL))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ctx := context.Background()
-
-	text, err := cl.Chat(ctx, ChatRequest{Input: "plain"})
-	if err != nil || text.Content != "hello" || text.Format != OutputText {
-		t.Fatalf("text: %+v err=%v", text, err)
-	}
-
-	md, err := cl.Chat(ctx, ChatRequest{Input: "md", Format: OutputMarkdown})
-	if err != nil || md.Content != "# Title" || md.Format != OutputMarkdown {
-		t.Fatalf("markdown: %+v err=%v", md, err)
-	}
-
-	js, err := cl.Chat(ctx, ChatRequest{Input: "json", Format: OutputJSON})
-	if err != nil || js.Format != OutputJSON {
-		t.Fatalf("json: %+v err=%v", js, err)
-	}
-	var parsed map[string]bool
-	if err = js.JSON(&parsed); err != nil || !parsed["ok"] {
-		t.Fatalf("json parse: %v parsed=%v", err, parsed)
-	}
-}
-
-func TestChat_requiresInput(t *testing.T) {
-	cl, err := NewClient("k", WithBaseURL("http://127.0.0.1:1"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = cl.Chat(context.Background(), ChatRequest{})
-	if err == nil || !strings.Contains(err.Error(), "input is required") {
-		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -365,7 +272,7 @@ func TestChatCompletion_multiMessageAndTemperature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := resp.AllChoicesContent(); got != "done" {
+	if got, err := resp.FirstText(); err != nil || got != "done" {
 		t.Fatalf("content = %q", got)
 	}
 }
@@ -527,4 +434,15 @@ func TestDoJSON_retriesOn429(t *testing.T) {
 	if len(list.Data) != 1 || list.Data[0].ID != "ok" {
 		t.Fatalf("list = %+v", list)
 	}
+}
+
+// uploadFileResponse is the subset of the upload response that test servers
+// echo back. The client decodes the full File model; this exists only so tests
+// can write a realistic partial payload.
+type uploadFileResponse struct {
+	ID       string `json:"id"`
+	Object   string `json:"object"`
+	Bytes    int64  `json:"bytes"`
+	Filename string `json:"filename"`
+	Purpose  string `json:"purpose"`
 }

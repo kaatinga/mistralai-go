@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,7 +19,11 @@ func TestParseBatchResults_chat(t *testing.T) {
 		`{"id":"r1","custom_id":"1","response":{"status_code":429,"body":null},"error":{"message":"rate limited"}}`,
 	}, "\n")
 
-	results, err := ParseBatchResults[ChatCompletionResponse]([]byte(jsonl))
+	var results []BatchResult[ChatCompletionResponse]
+	err := DecodeBatchResults[ChatCompletionResponse](strings.NewReader(jsonl), func(result BatchResult[ChatCompletionResponse]) error {
+		results = append(results, result)
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +40,7 @@ func TestParseBatchResults_chat(t *testing.T) {
 	if results[0].StatusCode != 200 {
 		t.Errorf("status = %d", results[0].StatusCode)
 	}
-	content, err := results[0].Body.FirstChoiceContent()
+	content, err := results[0].Body.FirstText()
 	if err != nil || content != "Hello there" {
 		t.Errorf("content = %q err = %v", content, err)
 	}
@@ -61,7 +66,11 @@ func TestParseBatchResults_ocrAndLargeLine(t *testing.T) {
 	bodyJSON, _ := json.Marshal(body)
 	line := fmt.Sprintf(`{"id":"r0","custom_id":"0","response":{"status_code":200,"body":%s},"error":null}`, bodyJSON)
 
-	results, err := ParseBatchResults[OCRResponse]([]byte(line))
+	var results []BatchResult[OCRResponse]
+	err := DecodeBatchResults[OCRResponse](strings.NewReader(line), func(result BatchResult[OCRResponse]) error {
+		results = append(results, result)
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,8 +118,13 @@ func TestDownloadFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(body) != raw {
-		t.Errorf("body = %q want %q", body, raw)
+	defer body.Close()
+	data, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != raw {
+		t.Errorf("body = %q want %q", data, raw)
 	}
 
 	if _, err := cl.DownloadFile(context.Background(), " "); err == nil {
@@ -137,5 +151,84 @@ func TestDownloadFile_apiError(t *testing.T) {
 	}
 	if apiErr.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d", apiErr.StatusCode)
+	}
+}
+
+func TestDecodeBatchResults_largeLineAndReaderError(t *testing.T) {
+	large := strings.Repeat("x", 17*1024*1024)
+	line := fmt.Sprintf(`{"id":"r0","custom_id":"large","response":{"status_code":200,"body":{"id":"%s"}}}`, large)
+	var got []BatchResult[struct {
+		ID string `json:"id"`
+	}]
+	if err := DecodeBatchResults(strings.NewReader(line+"\n"), func(result BatchResult[struct {
+		ID string `json:"id"`
+	}]) error {
+		got = append(got, result)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].CustomID != "large" || len(got[0].Body.ID) != len(large) {
+		t.Fatalf("decoded result = %+v", got)
+	}
+
+	wantErr := errors.New("reader failed")
+	err := DecodeBatchResults[ChatCompletionResponse](errorReader{err: wantErr}, func(BatchResult[ChatCompletionResponse]) error {
+		return nil
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("error = %v, want %v", err, wantErr)
+	}
+}
+
+type errorReader struct {
+	err error
+}
+
+func (r errorReader) Read([]byte) (int, error) { return 0, r.err }
+
+// A single record must not be read into memory without a bound: an output file
+// whose line never terminates has to fail fast, not consume the whole reader.
+func TestDecodeBatchResults_recordSizeLimit(t *testing.T) {
+	line := `{"custom_id":"a","response":{"status_code":200,"body":{"x":1}}}` + "\n"
+
+	if err := DecodeBatchResultsWithOptions(
+		strings.NewReader(line),
+		BatchResultsOptions{MaxRecordBytes: 16},
+		func(BatchResult[map[string]int]) error { return nil },
+	); err == nil || !strings.Contains(err.Error(), "line 1 exceeds 16 bytes") {
+		t.Fatalf("err = %v", err)
+	}
+
+	// The line number in the message points at the offending record.
+	doc := line + strings.Repeat("y", 4096) + "\n"
+	err := DecodeBatchResultsWithOptions(
+		strings.NewReader(doc),
+		BatchResultsOptions{MaxRecordBytes: 1024},
+		func(BatchResult[map[string]int]) error { return nil },
+	)
+	if err == nil || !strings.Contains(err.Error(), "line 2 exceeds 1024 bytes") {
+		t.Fatalf("err = %v", err)
+	}
+
+	// Positive overrides remain available for unusually large records.
+	var seen int
+	if err := DecodeBatchResultsWithOptions(
+		strings.NewReader(line),
+		BatchResultsOptions{MaxRecordBytes: int64(len(line))},
+		func(BatchResult[map[string]int]) error { seen++; return nil },
+	); err != nil || seen != 1 {
+		t.Fatalf("overridden decode: seen=%d err=%v", seen, err)
+	}
+
+	// Negative bounds are invalid rather than an escape hatch from the package's
+	// bounded-read contract.
+	err = DecodeBatchResultsWithOptions(
+		strings.NewReader(line),
+		BatchResultsOptions{MaxRecordBytes: -1},
+		func(BatchResult[map[string]int]) error { return nil },
+	)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("negative limit err = %v", err)
 	}
 }

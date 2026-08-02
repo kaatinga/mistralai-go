@@ -1,391 +1,187 @@
 # mistralai-go
 
-Synchronous Go client for the [Mistral API](https://docs.mistral.ai/api). Each call blocks until Mistral returns HTTP 200 with the full JSON body (no job polling or background workers).
+`mistralai-go` is a community-maintained Go client for the Mistral API. It is
+not an official Mistral SDK.
 
-## API surface
-
-| Method | HTTP | Use when |
-|--------|------|----------|
-| `OCR` | `POST /v1/files`, then `POST /v1/ocr` | Document OCR via file upload (auto-deletes the file afterwards) |
-| `OCRByFileID` | `POST /v1/ocr` | OCR an already-uploaded file by id (no auto-delete) |
-| `OCRByURL` | `POST /v1/ocr` | OCR a document or image referenced by URL (`document_url` / `image_url`, incl. `data:` URIs) — no upload round-trip |
-| `Chat` | `POST /v1/chat/completions` | Single user turn with optional system prompt and output format helpers |
-| `ChatCompletion` | `POST /v1/chat/completions` | Full control: message list, temperature, `response_format`, etc. |
-| `Embeddings` | `POST /v1/embeddings` | Text embeddings (`mistral-embed`, batch input, optional dimensions/dtype) |
-| `ListModels` | `GET /v1/models` | List models available to your API key |
-| `UploadFile` | `POST /v1/files` | Upload a file; returns file id |
-| `ListFiles` | `GET /v1/files` | List uploaded files (optional pagination and filters) |
-| `DeleteFile` | `DELETE /v1/files/{file_id}` | Remove an uploaded file |
-| `DownloadFile` | `GET /v1/files/{file_id}/content` | Download raw file content (e.g. batch results) |
-| `UploadBatchInput` | `POST /v1/files` | Build a JSONL input file from typed entries and upload it (`purpose=batch`) |
-| `CreateBatchJob` | `POST /v1/batch/jobs` | Create an async batch job over an uploaded input file |
-| `ListBatchJobs` | `GET /v1/batch/jobs` | List batch jobs (optional pagination, `created_by_me`) |
-| `GetBatchJob` | `GET /v1/batch/jobs/{job_id}` | Fetch one batch job |
-| `CancelBatchJob` | `POST /v1/batch/jobs/{job_id}/cancel` | Request cancellation of a batch job |
-
-All API calls (including file uploads) retry on **429** and **5xx** with jittered exponential backoff, honoring the `Retry-After` response header (default **4** retries / 5 attempts total, context-aware). Configure with `WithMaxRetries`; `WithMaxRetries(0)` disables retries.
+The v1 API covers Chat Completions and streaming, structured output, tools,
+FIM, OCR, Files, Embeddings, Batch, Models, moderation, and classification.
+Beta Conversations/Agents, libraries, fine-tuning management, and admin APIs
+are intentionally outside the v1 scope.
 
 ## Install
 
 ```bash
-go get github.com/kaatinga/mistralai-go
+go get github.com/kaatinga/mistralai-go@main
 ```
 
-## Usage
+The module requires Go 1.26.
+
+> **Release candidate.** `v1.0.0` is not tagged yet. The API described here is
+> the intended v1 surface, but it is only frozen once the tag exists. The
+> command above resolves `main` to a commit-based pseudo-version in `go.mod`;
+> pin that version until the release. See `RELEASE_NOTES.md` for the remaining
+> gates.
+
+## Client, errors, and retries
 
 ```go
-package main
-
-import (
-	"context"
-	"bytes"
-	"log"
-	"net/http"
-	"os"
-	"time"
-
-	mistralai "github.com/kaatinga/mistralai-go"
+client, err := mistralai.NewClient(
+	os.Getenv("MISTRAL_API_KEY"),
+	mistralai.WithHTTPClient(&http.Client{Timeout: 2 * time.Minute}),
 )
+```
 
-func main() {
-	cl, err := mistralai.NewClient(
-		os.Getenv("MISTRAL_API_KEY"),
-		mistralai.WithHTTPClient(&http.Client{Timeout: 120 * time.Second}),
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
+`NewClient` returns a concrete `*Client`; consumers should define narrow local
+interfaces when needed. API failures wrap `*mistralai.APIError`, which exposes
+the status, provider message, request ID, bounded response fragment, and
+retryability. Transport failures never produce an `*APIError` — there is no
+status to report — so match those with `errors.Is` against the underlying cause
+(`context.DeadlineExceeded` and friends) instead.
 
-	ctx := context.Background()
+The default transport retries only replay-safe `GET`, `HEAD`, and `DELETE`
+operations. Paid or entity-creating POST operations—including Chat, FIM, OCR,
+Embeddings, uploads, moderation/classification, and Batch creation/cancel—are
+sent exactly once. `WithMaxRetries` and `WithRetryPolicy` tune retries for safe
+operations only. Backoff and `Retry-After` waits stop immediately when the
+context is cancelled.
 
-	// OCR: POST /v1/files, then POST /v1/ocr
-	pdf, _ := os.ReadFile("document.pdf")
-	ocr, err := cl.OCR(ctx, mistralai.OCRRequest{
-		Filename:    "document.pdf",
-		Content:     bytes.NewReader(pdf),
-		ContentType: "application/pdf",
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println(ocr.Pages[0].Markdown)
+## Chat, structured output, and tools
 
-	// Chat — one system + one user message; optional markdown/json formatting
-	chat, err := cl.Chat(ctx, mistralai.ChatRequest{
-		Input:  "Summarize the document in one sentence.",
-		Format: mistralai.OutputText,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println(chat.Content)
+```go
+response, err := client.ChatCompletion(ctx, mistralai.ChatCompletionRequest{
+	Model: mistralai.ChatModelMistralSmallLatest,
+	Messages: []mistralai.Message{
+		{Role: mistralai.RoleUser, Content: mistralai.TextContent("Hello")},
+	},
+})
+text, err := response.FirstText()
+```
 
-	// ChatCompletion — multi-turn or custom parameters
-	resp, err := cl.ChatCompletion(ctx, mistralai.ChatCompletionRequest{
-		Model: "mistral-small-latest",
-		Messages: []mistralai.ChatMessage{
-			{Role: "system", Content: "You are concise."},
-			{Role: "user", Content: "Hello"},
+For multimodal input, use `MultipartMessage` with `TextPart`, `FilePart`,
+`ImageURLPart`, or `DocumentURLPart`. `ChatCompletionRequest` has no streaming
+flag: call `ChatCompletionStream`, repeatedly call `Recv`, and always `Close`
+the stream — including after `Recv` reports `io.EOF`. `Accumulate` is available
+when collecting the full text is desired; it returns `ErrIncompleteStream`, with
+the text read so far, if the body ends before the terminating `[DONE]` event.
+Individual SSE lines and combined event payloads are bounded at 10 MiB;
+oversized events return `ErrResponseTooLarge`.
+
+`ChatStructured[T]` accepts the complete request, calls `ChatCompletion`, and
+returns both the decoded value and original response/usage. Set a schema with
+`JSONSchemaFormat`:
+
+```go
+value, response, err := mistralai.ChatStructured[Result](ctx, client,
+	mistralai.ChatCompletionRequest{
+		Model: mistralai.ChatModelMistralSmallLatest,
+		Messages: []mistralai.Message{
+			mistralai.TextMessage(mistralai.RoleUser, "Return the answer as JSON"),
 		},
-		Temperature: new(0.7), // pointer so temperature 0 is distinguishable from unset
+		ResponseFormat: mistralai.JSONSchemaFormat("result", schema),
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println(resp.FirstChoiceContent())
-
-	// ListModels
-	models, err := cl.ListModels(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, m := range models.Data {
-		log.Println(m.ID)
-	}
-}
 ```
 
-### High-level `Chat` vs `ChatCompletion`
+`ChatCompletionWithTools` runs a validated tool loop. A forced named tool choice
+applies to the first round only; later rounds use `auto`, allowing normal final
+text. `ChatCompletionWithToolsOptions` can deliberately force every round.
+Unknown tools, duplicate call IDs, malformed arguments, empty results, and
+round-limit exhaustion return errors.
 
-- **`Chat`** builds a short message list from `Input` and optional `System`, and can request text, markdown, or JSON output via `Format` / `ResponseFormat`.
-- **`ChatCompletion`** maps directly to the REST request body: any number of messages, sampling controls (`temperature`, `top_p`, `max_tokens`, `stop`, `random_seed`, `presence_penalty`, `frequency_penalty`, `n`), `response_format`, **tool calling** (`tools`, `tool_choice`, `parallel_tool_calls`), predicted outputs (`prediction`, see `PredictionContent`), prompt caching (`prompt_cache_key`), reasoning (`reasoning_effort`), and `safe_prompt`. Use this for conversation history or app-specific control. The `stream` field is reserved; setting it returns an error until SSE streaming is implemented.
+`maxRounds` bounds how many rounds of tool calls are executed, so the loop sends
+at most `maxRounds+1` completions. The answer that follows the last executed
+round is always inspected and returned; exhaustion is reported only when the
+model is still asking for tools at that point.
 
-`Chat` is implemented on top of `ChatCompletion` internally.
+## FIM
 
-### Tool calling
+`FIMCompletion` returns one buffered `FIMCompletionResponse`.
+`FIMCompletionStream` selects streaming without a request flag and returns a
+stream owned by the caller; close it on every path.
 
-Expose functions to the model via `tools` on `ChatCompletionRequest`. When the model needs data, it returns `tool_calls` on the assistant message; run your handlers and send `role: "tool"` messages back, then call `ChatCompletion` again (or use `ChatCompletionWithTools` to run that loop).
+## OCR and Files
 
-`parallel_tool_calls` defaults to `true` on the Mistral API when omitted, so the model may request multiple functions in one assistant turn.
+One `OCR` method accepts the closed source union:
 
-Do not combine `response_format: json_schema` with `tools` on the same request.
+- `UploadedFile` — caller owns the remote file; OCR does not delete it.
+- `DocumentURL` and `ImageURL` — no upload lifecycle.
+- `LocalFile` — the SDK streams upload → OCR → delete.
 
 ```go
-paramsSchema := map[string]any{
-	"type": "object",
-	"properties": map[string]any{
-		"building_id": map[string]any{"type": "integer"},
-	},
-}
-tools := []mistralai.Tool{
-	mistralai.FunctionTool("count_apartments", "Count apartments in confirmed project data", paramsSchema),
-}
+file, err := os.Open("invoice.pdf")
+if err != nil { /* handle */ }
+defer file.Close() // the caller owns the input reader
 
-handler := func(ctx context.Context, call mistralai.ToolCall) (string, error) {
-	// Parse call.Function.Arguments (JSON string), run your Go logic, return JSON text.
-	return `{"count":8}`, nil
-}
-
-resp, err := mistralai.ChatCompletionWithTools(ctx, cl, mistralai.ChatCompletionRequest{
-	Model: mistralai.DefaultChatModel,
-	Messages: []mistralai.ChatMessage{
-		mistralai.TextMessage(mistralai.RoleUser, "How many apartments?"),
+response, err := client.OCR(ctx, mistralai.OCRRequest{
+	Model: mistralai.DefaultOCRModel,
+	Source: mistralai.LocalFile{
+		Name: "invoice.pdf", ContentType: "application/pdf", Reader: file,
 	},
-	Tools:      tools,
-	ToolChoice: mistralai.ToolChoiceMode(mistralai.ToolChoiceAuto),
-}, handler, 3)
-if err != nil {
-	log.Fatal(err)
-}
-answer, err := resp.FirstChoiceContent()
+})
 ```
 
-Manual loop: check `choice, _ := resp.FirstChoice()` and `choice.HasToolCalls()`, append `choice.Message` plus `mistralai.ToolMessage(call.ID, call.Function.Name, result)` for each call, then call `ChatCompletion` again with the extended `Messages` slice.
+`LocalFile.Reader` remains caller-owned and is never closed by the SDK. A delete
+failure after successful OCR returns the response together with
+`*OCRCleanupError`; simultaneous OCR and cleanup failures are joined.
 
-### Embeddings
+`UploadFile` streams the caller-owned `io.Reader` and returns complete `File`
+metadata. `DownloadFile` returns an `io.ReadCloser`; the caller must close it.
+The SDK closes all non-success response bodies itself.
+
+## Embeddings
 
 ```go
-resp, err := cl.Embeddings(ctx, mistralai.EmbeddingRequest{
+response, err := client.Embeddings(ctx, mistralai.EmbeddingRequest{
 	Model: mistralai.EmbeddingModelMistralEmbed,
-	Input: mistralai.EmbeddingInputStrings(
-		"Embed this sentence.",
-		"As well as this one.",
-	),
+	Input: []string{"first", "second"},
+	OutputDType: mistralai.OutputDTypeInt8,
 })
-if err != nil {
-	log.Fatal(err)
-}
-vecs, err := resp.Float64Vectors()
-if err != nil {
-	log.Fatal(err)
-}
-log.Println(len(vecs), len(vecs[0]))
+vectors, err := response.Int8Vectors()
 ```
 
-Optional request fields: `encoding_format` (`float` or `base64`), `output_dimension`, `output_dtype` (`float`, `int8`, `uint8`, `binary`, `ubinary`), and `metadata`. Decode each vector with `EmbeddingData.Float64s()` or `Float32s()` (handles JSON float arrays and base64-encoded float32 payloads).
+The effective encoding and dtype are retained in `EmbeddingResponse`. Use the
+matching float32/float64, int8, uint8, binary, or ubinary decoder. A mismatched
+decoder returns `*ErrEmbeddingType`; vector helpers validate response indexes
+and restore input order.
 
-For batch jobs on `/v1/embeddings`, use `EmbeddingEntry` and `ParseBatchResults[mistralai.EmbeddingResponse]`.
+## Batch JSONL
 
-### Client options
+`EncodeBatchEntries` writes JSONL to an `io.Writer`; `UploadBatchInput` encodes
+directly into a streamed multipart upload. Build typed entries with
+`ChatCompletionEntry`, `EmbeddingEntry`, `OCREntry`, `ModerationEntry`, or
+`ClassificationEntry`. `OCREntry` returns an error rather than a malformed
+entry: it validates the request like synchronous `OCR` and rejects `LocalFile`,
+which cannot carry an upload lifecycle into a batch job.
 
-- `WithHTTPClient` — custom `http.Client` (default timeout **10 minutes**, suitable for OCR).
-- `WithMaxRetries` — retries after the initial attempt for retryable status codes (default **4**, i.e. 5 attempts total; `0` disables retries).
-- `WithBaseURL` — override API origin (tests or proxies).
-
-### Mocking and dependency inversion
-
-`NewClient` returns a concrete `*Client` (not an interface) so new endpoints can be
-added without breaking your code. For testing or dependency inversion, define a
-narrow interface in your own package with just the methods you use — `*Client`
-satisfies it implicitly:
+Batch output is also streaming, one record at a time and bounded by
+`DefaultMaxBatchRecordBytes` per line (override it with
+`DecodeBatchResultsWithOptions`; positive limits override the default and
+negative limits are invalid):
 
 ```go
-type ocrClient interface {
-	OCR(ctx context.Context, req mistralai.OCRRequest) (mistralai.OCRResponse, error)
-}
+body, err := client.DownloadFile(ctx, outputFileID)
+if err != nil { /* handle */ }
+defer body.Close()
+
+err = mistralai.DecodeBatchResults[mistralai.ChatCompletionResponse](body,
+	func(result mistralai.BatchResult[mistralai.ChatCompletionResponse]) error {
+		// Consume one result without retaining the whole JSONL file.
+		return nil
+	})
 ```
 
-Package helpers accept small role interfaces, all satisfied by `*Client`:
-`ChatCompletionWithTools` and `ChatStructured[T]` take a `ChatCompleter`,
-`WaitForBatchJob` takes a `BatchJobGetter`, and `OCRStructured[T]` takes an
-`OCRRunner` — so you can drive them with a fake in tests.
+`WaitForBatchJob` polls through a narrow `BatchJobGetter`, honors context
+cancellation, and returns terminal job data for inspection.
 
-### JSON output with `Chat`
+## Models, moderation, and classification
 
-```go
-resp, err := cl.Chat(ctx, mistralai.ChatRequest{
-	Input:  `{"task":"translate","text":"hello"}`,
-	Format: mistralai.OutputJSON,
-})
-var out map[string]string
-if err = resp.JSON(&out); err != nil {
-	log.Fatal(err)
-}
-```
+`ListModels` and `GetModel` return lifecycle, ownership, aliases, deprecation,
+default temperature, and capability data. Use `ModelList.FilterByCapability`;
+never infer Chat support from a model name. Unknown future capability fields are
+preserved during JSON round trips and can be queried with `Supports`.
 
-For `json_schema`, set `ResponseFormat` on `ChatRequest`, `ChatCompletionRequest`, or `OCRRequest.DocumentAnnotationFormat`. Unmarshal OCR output with `OCRStructured[T]` or `DocumentAnnotationInto[T](resp)`.
+`Moderate` and `Classify` accept `[]string` inputs, making request/response
+cardinality and Batch encoding explicit. Provider-defined category and target
+names are maps so new server values decode without an SDK release.
 
-### Ergonomic helpers
-
-- `new(v)` (Go 1.26 built-in) — set optional pointer fields (`Temperature`, `TopP`, `ExtractHeader`, `IncludeImageBase64`, …) inline; `new(0.0)` is an explicit zero, a nil pointer is "unset".
-- `JSONSchemaFormat(name, schema)` — build a strict `json_schema` `*ResponseFormat` without hand-writing the `ResponseFormat`/`JSONSchema` nesting.
-- `TextMessage(role, text)` / `MultipartMessage(role, parts...)` and `TextPart`, `FilePart`, `ImageURLPart`, `DocumentURLPart` — build messages and multimodal content without magic strings.
-- `FunctionTool(name, description, parameters)` / `ToolMessage(toolCallID, name, content)` / `ChatCompletionWithTools` — function calling on chat completions.
-- `RoleSystem`, `RoleUser`, `RoleAssistant`, `RoleTool` and `ResponseFormatText`, `ResponseFormatJSONObject`, `ResponseFormatJSONSchema` constants for the role and `response_format` type fields.
-
-```go
-req := mistralai.ChatCompletionRequest{
-	Model: mistralai.ChatModelPixtralLargeLatest,
-	Messages: []mistralai.ChatMessage{
-		mistralai.TextMessage(mistralai.RoleSystem, "Classify the document."),
-		mistralai.MultipartMessage(mistralai.RoleUser,
-			mistralai.TextPart("What kind of document is this?"),
-			mistralai.FilePart(fileID), // from cl.UploadFile
-		),
-	},
-	Temperature:    new(0.0),
-	ResponseFormat: mistralai.JSONSchemaFormat("doc_type", schema),
-}
-```
-
-### Batch API
-
-The Batch API runs one endpoint over many requests asynchronously (roughly half
-the per-token cost, no per-request rate limits) and returns results as a JSONL
-file. It is **not** for latency-sensitive calls — a job completes within its
-`timeout_hours` (default 24), not immediately.
-
-Build the input from the same typed request values you already use:
-`ChatCompletionEntry` for `/v1/chat/completions`, `EmbeddingEntry` for
-`/v1/embeddings`, `OCREntry` for `/v1/ocr` (referencing an already-uploaded
-`file_id`), `OCRURLEntry` for `/v1/ocr` over a document URL, or
-`Entry(customID, body)` for any other endpoint. Parse results
-back into the matching typed response with `ParseBatchResults[T]`.
-
-```go
-entries := []mistralai.BatchEntry{
-	mistralai.ChatCompletionEntry("0", mistralai.ChatCompletionRequest{
-		Model:    mistralai.ChatModelMistralSmallLatest,
-		Messages: []mistralai.ChatMessage{mistralai.TextMessage(mistralai.RoleUser, "Hello")},
-	}),
-	mistralai.ChatCompletionEntry("1", mistralai.ChatCompletionRequest{
-		Model:    mistralai.ChatModelMistralSmallLatest,
-		Messages: []mistralai.ChatMessage{mistralai.TextMessage(mistralai.RoleUser, "Bonjour")},
-	}),
-}
-
-inputFileID, err := cl.UploadBatchInput(ctx, "batch.jsonl", entries)
-if err != nil {
-	log.Fatal(err)
-}
-
-job, err := cl.CreateBatchJob(ctx, mistralai.CreateBatchJobRequest{
-	Endpoint:   mistralai.BatchEndpointChatCompletions,
-	Model:      mistralai.ChatModelMistralSmallLatest, // required at job level; defaults per endpoint if omitted
-	InputFiles: []string{inputFileID},
-})
-if err != nil {
-	log.Fatal(err)
-}
-
-// Poll until terminal (SUCCESS / FAILED / TIMEOUT_EXCEEDED / CANCELLED).
-waitCtx, cancel := context.WithTimeout(ctx, time.Hour)
-defer cancel()
-job, err = mistralai.WaitForBatchJob(waitCtx, cl, job.ID, 10*time.Second)
-if err != nil {
-	log.Fatal(err)
-}
-
-if job.Status == mistralai.BatchStatusSuccess && job.OutputFile != nil {
-	raw, err := cl.DownloadFile(ctx, *job.OutputFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	results, err := mistralai.ParseBatchResults[mistralai.ChatCompletionResponse](raw)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, r := range results {
-		if r.StatusCode == 200 {
-			content, _ := r.Body.FirstChoiceContent()
-			log.Println(r.CustomID, content)
-		}
-	}
-}
-```
-
-`WaitForBatchJob` returns terminal-but-failed jobs **without** a Go error — inspect
-`job.Errors` and download `job.ErrorFile` (also JSONL, parse with
-`ParseBatchResults[T]`) to see per-request failures. The input file is not
-deleted automatically; use `DeleteFile` when you no longer need it.
-
-### Error handling
-
-Non-200 responses return a typed `*APIError`. Inspect it with `errors.As` to
-branch on the HTTP status, error type, or whether the client already retried it:
-
-```go
-resp, err := cl.Chat(ctx, req)
-var apiErr *mistralai.APIError
-if errors.As(err, &apiErr) {
-	switch apiErr.StatusCode {
-	case http.StatusUnauthorized:
-		log.Fatal("bad API key")
-	case http.StatusTooManyRequests:
-		// apiErr.Retryable() == true; the client already exhausted WithMaxRetries
-	}
-}
-```
-
-## Comparison with other Go Mistral clients
-
-There is no official Go SDK for Mistral. The table below compares `mistralai-go`
-with the three most widely used community clients (state as of May 2026):
-
-- [`gage-technologies/mistral-go`](https://github.com/Gage-Technologies/mistral-go) — the most popular and most-referenced client (e.g. used by `langchaingo`); MIT, last release v1.1.0 (Jun 2024).
-- [`robertjkeck2/mistral-go`](https://github.com/robertjkeck2/mistral-go) — an early, minimal client; MIT, last release v0.1.1 (Jan 2024).
-- [`onkyou/go-mistral`](https://pkg.go.dev/github.com/onkyou/go-mistral/mistral) — a newer, broad client with a service-oriented API; MIT, untagged.
-
-| Capability | **mistralai-go** | gage-technologies | robertjkeck2 | onkyou/go-mistral |
-|---|:---:|:---:|:---:|:---:|
-| Chat completions | ✅ | ✅ | ✅ | ✅ |
-| Streaming chat | ❌ | ✅ | ✅ | ✅ |
-| Embeddings | ✅ | ✅ | ✅ | ✅ |
-| FIM / code completion | ❌ | ✅ | ❌ | ❌ |
-| Function / tool calling | ✅ | ✅ | ❌ | ✅ |
-| Moderation / classification | ❌ | ❌ | ❌ | ✅ |
-| **OCR + document annotation** | ✅ | ❌ | ❌ | ❌ |
-| **File API (upload / list / delete / download)** | ✅ | ❌ | ❌ | ❌ |
-| **Batch API** (typed entries + typed results) | ✅ | ❌ | ❌ | ❌ |
-| List models | ✅ | ✅ | ✅ | ❌ |
-| `response_format: json_object` | ✅ | ✅ | ❌ | ✅ |
-| `response_format: json_schema` (strict) | ✅ | ❌ | ❌ | ✅ |
-| Typed structured-output helpers (generics) | ✅ | ❌ | ❌ | partial |
-| Multimodal content parts (file / image / document URL) | ✅ | ❌ | ❌ | ❌ |
-| Built-in retries (429 / 5xx, backoff) | ✅ | ✅ | ❌ | ❌ |
-| Typed API error (`errors.As`) | ✅ | partial | partial | ✅ |
-
-### What `mistralai-go` does that the others do not
-
-- **OCR** (`mistral-ocr-latest`) with the upload→OCR→cleanup flow handled for you, plus **document annotation** (`json_schema`-driven structured extraction) — no other client implements the OCR endpoint.
-- A first-class **Files API** (`UploadFile`, `ListFiles` with pagination/filters, `DeleteFile`, `DownloadFile`).
-- The **Batch API** with an ergonomic typed contract: build input from `ChatCompletionRequest`/OCR/arbitrary bodies (`UploadBatchInput`), create/poll/cancel jobs (`WaitForBatchJob`), and parse results straight into `ChatCompletionResponse`/`OCRResponse` (`ParseBatchResults[T]`) — no hand-rolled JSONL.
-- Strict **`json_schema`** structured output with generic helpers (`OCRStructured[T]`, `ChatStructured[T]`, `DocumentAnnotationInto[T]`).
-- **Multimodal** message parts (`FilePart`, `ImageURLPart`, `DocumentURLPart`) for vision/document chat.
-
-### What `mistralai-go` does NOT do (yet)
-
-If you need any of the following, one of the clients above will serve you better today:
-
-- **Streaming responses** — `mistralai-go` is fully synchronous (blocks until the complete JSON body returns). All three other clients support streamed chat. The OCR-first design assumes a single blocking call.
-- **FIM / code completion** (Codestral) — available in `gage-technologies`.
-- **Moderation and classification** — available only in `onkyou/go-mistral`.
-- **Agents and fine-tuning** — not implemented by any of these clients, including this one.
-
-In short: choose `mistralai-go` for **OCR, document/file workflows, tool calling, and strict structured output**; reach for `gage-technologies/mistral-go` for streaming and FIM, and `onkyou/go-mistral` if you specifically need moderation/classification.
-
-## Testing
-
-```bash
-go test ./...
-```
-
-### Live OCR test
-
-```bash
-MISTRAL_API_KEY=... go test -tags=mistral_test ./...
-```
-
-## License
-
-[MIT](LICENSE)
+See [MIGRATING.md](MIGRATING.md) for v0.19.0 changes and the package examples
+for complete compilable call patterns.

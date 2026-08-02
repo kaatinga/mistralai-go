@@ -92,6 +92,8 @@ func TestOCRStructured(t *testing.T) {
 				DocumentAnnotation: new(annotation),
 				Pages:              []OCRPage{{Index: 0, Markdown: "hi"}},
 			})
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/files/file-1":
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(w, r)
 		}
@@ -107,8 +109,7 @@ func TestOCRStructured(t *testing.T) {
 		OK bool `json:"ok"`
 	}
 	got, resp, err := OCRStructured[extracted](context.Background(), cl, OCRRequest{
-		Filename: "doc.pdf",
-		Content:  strings.NewReader("%PDF"),
+		Source: LocalFile{Name: "doc.pdf", Reader: strings.NewReader("%PDF")},
 	})
 	if err != nil {
 		t.Fatal(err)

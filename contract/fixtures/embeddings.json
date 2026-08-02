@@ -1,0 +1,37 @@
+{
+  "request": {
+    "model": "mistral-embed",
+    "input": [
+      "one",
+      "two"
+    ],
+    "encoding_format": "base64",
+    "output_dimension": 8,
+    "output_dtype": "float",
+    "metadata": {
+      "source": "contract-fixture"
+    }
+  },
+  "float_response": {
+    "id": "embed-123",
+    "object": "list",
+    "model": "mistral-embed",
+    "data": [
+      {
+        "object": "embedding",
+        "index": 0,
+        "embedding": [
+          0.1,
+          -0.2
+        ]
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 2,
+      "total_tokens": 2
+    }
+  },
+  "base64_response": {
+    "embedding": "AACAPwAAwL8="
+  }
+}

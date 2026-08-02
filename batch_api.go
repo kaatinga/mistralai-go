@@ -14,13 +14,13 @@ import (
 // allowed (forward compatibility); these constants document the set supported
 // by the Mistral Batch API.
 const (
-	BatchEndpointChatCompletions     = "/v1/chat/completions"
-	BatchEndpointEmbeddings          = "/v1/embeddings"
-	BatchEndpointFIMCompletions      = "/v1/fim/completions"
-	BatchEndpointModerations         = "/v1/moderations"
+	BatchEndpointChatCompletions     = pathChatCompletions
+	BatchEndpointEmbeddings          = pathEmbeddings
+	BatchEndpointFIMCompletions      = pathFIMCompletions
+	BatchEndpointModerations         = pathModerations
 	BatchEndpointChatModerations     = "/v1/chat/moderations"
-	BatchEndpointOCR                 = "/v1/ocr"
-	BatchEndpointClassifications     = "/v1/classifications"
+	BatchEndpointOCR                 = pathOCR
+	BatchEndpointClassifications     = pathClassifications
 	BatchEndpointChatClassifications = "/v1/chat/classifications"
 	BatchEndpointConversations       = "/v1/conversations"
 	BatchEndpointAudioTranscriptions = "/v1/audio/transcriptions"
@@ -189,7 +189,7 @@ func (c *Client) CreateBatchJob(ctx context.Context, req CreateBatchJobRequest) 
 		TimeoutHours: req.TimeoutHours,
 	}
 	var job BatchJob
-	if err := c.postJSON(ctx, "/v1/batch/jobs", body, &job); err != nil {
+	if err := c.postJSON(ctx, pathBatchJobs, body, &job); err != nil {
 		return BatchJob{}, fmt.Errorf("mistral: create batch job: %w", err)
 	}
 	return job, nil
@@ -198,7 +198,7 @@ func (c *Client) CreateBatchJob(ctx context.Context, req CreateBatchJobRequest) 
 // ListBatchJobs lists batch jobs for the API key (GET /v1/batch/jobs).
 func (c *Client) ListBatchJobs(ctx context.Context, req ListBatchJobsRequest) (BatchJobList, error) {
 	var list BatchJobList
-	if err := c.getJSON(ctx, "/v1/batch/jobs", req.queryValues(), &list); err != nil {
+	if err := c.getJSON(ctx, pathBatchJobs, req.queryValues(), &list); err != nil {
 		return BatchJobList{}, fmt.Errorf("mistral: list batch jobs: %w", err)
 	}
 	return list, nil
@@ -206,11 +206,12 @@ func (c *Client) ListBatchJobs(ctx context.Context, req ListBatchJobsRequest) (B
 
 // GetBatchJob fetches one batch job (GET /v1/batch/jobs/{job_id}).
 func (c *Client) GetBatchJob(ctx context.Context, jobID string) (BatchJob, error) {
-	if strings.TrimSpace(jobID) == "" {
-		return BatchJob{}, fmt.Errorf("%w: job id is required", ErrInvalidRequest)
+	id, err := pathID("job id", jobID)
+	if err != nil {
+		return BatchJob{}, err
 	}
 	var job BatchJob
-	if err := c.getJSON(ctx, "/v1/batch/jobs/"+url.PathEscape(jobID), nil, &job); err != nil {
+	if err := c.getJSON(ctx, pathBatchJobs+"/"+id, nil, &job); err != nil {
 		return BatchJob{}, fmt.Errorf("mistral: get batch job: %w", err)
 	}
 	return job, nil
@@ -218,11 +219,12 @@ func (c *Client) GetBatchJob(ctx context.Context, jobID string) (BatchJob, error
 
 // CancelBatchJob requests cancellation (POST /v1/batch/jobs/{job_id}/cancel).
 func (c *Client) CancelBatchJob(ctx context.Context, jobID string) (BatchJob, error) {
-	if strings.TrimSpace(jobID) == "" {
-		return BatchJob{}, fmt.Errorf("%w: job id is required", ErrInvalidRequest)
+	id, err := pathID("job id", jobID)
+	if err != nil {
+		return BatchJob{}, err
 	}
 	var job BatchJob
-	if err := c.postJSON(ctx, "/v1/batch/jobs/"+url.PathEscape(jobID)+"/cancel", nil, &job); err != nil {
+	if err := c.postJSON(ctx, pathBatchJobs+"/"+id+"/cancel", nil, &job); err != nil {
 		return BatchJob{}, fmt.Errorf("mistral: cancel batch job: %w", err)
 	}
 	return job, nil

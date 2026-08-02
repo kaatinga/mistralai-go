@@ -1,5 +1,5 @@
-// Package mistralai is a client for the Mistral AI platform API: chat
-// completions, embeddings, OCR, files, and the batch API.
+// Package mistralai is a community-maintained, third-party client for the
+// Mistral AI platform API. It is not an official Mistral SDK.
 //
 // # Field conventions
 //

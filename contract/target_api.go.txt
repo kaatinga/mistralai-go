@@ -1,0 +1,46 @@
+package contract
+
+import (
+	"context"
+	"os"
+
+	mistralai "github.com/kaatinga/mistralai-go"
+)
+
+func chat(client *mistralai.Client, ctx context.Context) error {
+	resp, err := client.ChatCompletion(ctx, mistralai.ChatCompletionRequest{
+		Model: "mistral-small-latest",
+		Messages: []mistralai.Message{
+			{Role: mistralai.RoleUser, Content: mistralai.TextContent("hello")},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = resp.FirstChoice()
+	return err
+}
+
+func ocr(client *mistralai.Client, ctx context.Context) error {
+	file, err := os.Open("invoice.pdf")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = client.OCR(ctx, mistralai.OCRRequest{
+		Model: "mistral-ocr-latest",
+		Source: mistralai.LocalFile{
+			Name: "invoice.pdf", ContentType: "application/pdf", Reader: file,
+		},
+	})
+	return err
+}
+
+func embeddings(client *mistralai.Client, ctx context.Context) error {
+	_, err := client.Embeddings(ctx, mistralai.EmbeddingRequest{
+		Model: "mistral-embed",
+		Input: []string{"one", "two"},
+	})
+	return err
+}
+

@@ -3,7 +3,6 @@ package mistralai
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -21,10 +20,6 @@ const (
 	// UploadFile (UploadFileRequest.Purpose).
 	FilePurposeOCR   = "ocr"
 	FilePurposeBatch = "batch"
-
-	documentTypeFile        = "file"
-	documentTypeDocumentURL = "document_url"
-	documentTypeImageURL    = "image_url"
 )
 
 // Client is a synchronous HTTP client for the Mistral API. Construct it with
@@ -41,10 +36,11 @@ const (
 // Helpers in this package that take a client accept such role interfaces
 // (ChatCompleter, BatchJobGetter, OCRRunner), all satisfied by *Client.
 type Client struct {
-	apiKey      string
-	baseURL     string
-	http        *http.Client
-	maxAttempts int
+	apiKey         string
+	baseURL        *url.URL
+	http           *http.Client
+	retryPolicy    RetryPolicy
+	userAgentValue string
 }
 
 // ChatCompleter runs chat completions; satisfied by *Client. It is the
@@ -65,48 +61,13 @@ type OCRRunner interface {
 	OCR(ctx context.Context, req OCRRequest) (OCRResponse, error)
 }
 
-// OCRRequest describes a document to OCR via file upload (not a URL).
-// The client performs POST /v1/files (multipart, purpose=ocr), then POST /v1/ocr with the returned file id.
-type OCRRequest struct {
-	// Filename is sent in multipart upload (e.g. "invoice.pdf").
-	Filename string
-	// Content is the raw file bytes.
-	Content io.Reader
-	// ContentType is optional; when empty, application/octet-stream is used.
-	ContentType string
-	// Model overrides DefaultOCRModel when non-empty.
-	Model string
-	// Pages limits processing to zero-based page indices.
-	Pages []int
-	// TableFormat is "markdown" or "html" when set.
-	TableFormat string
-	// IncludeImageBase64 requests base64 image payloads in the response when true.
-	IncludeImageBase64 *bool
-	ExtractHeader      *bool
-	ExtractFooter      *bool
-	// ID is an optional client-side correlation id forwarded to the API.
-	ID string
-	// DocumentAnnotationPrompt guides structured extraction for the whole document.
-	// DocumentAnnotationFormat must be set when using a prompt.
-	DocumentAnnotationPrompt string
-	DocumentAnnotationFormat *ResponseFormat
-}
-
-// UploadFileRequest uploads a file to Mistral files API.
-type UploadFileRequest struct {
-	Filename    string
-	Content     io.Reader
-	ContentType string
-	Purpose     string
-}
-
 // ClientOption configures optional NewClient settings. API key is always required separately.
 type ClientOption func(*clientOptions)
 
 type clientOptions struct {
-	baseURL    string
-	httpClient *http.Client
-	maxRetries *int
+	baseURL     string
+	httpClient  *http.Client
+	retryPolicy *RetryPolicy
 }
 
 // WithBaseURL overrides DefaultBaseURL, e.g. to route requests through a
@@ -120,12 +81,22 @@ func WithHTTPClient(httpClient *http.Client) ClientOption {
 	return func(o *clientOptions) { o.httpClient = httpClient }
 }
 
-// WithMaxRetries sets how many times a failed request is retried after the
-// initial attempt, for retryable failures (429/5xx and transport errors).
-// 0 disables retries; negative values are treated as 0. Default is 4 retries
-// (5 attempts in total).
+// WithMaxRetries sets how many times a replay-safe request is retried after
+// the initial attempt, for retryable failures (429/5xx and transport errors).
+// Unsafe requests remain single-attempt. 0 disables retries; negative values
+// are treated as 0. Default is 4 retries (5 attempts in total).
 func WithMaxRetries(n int) ClientOption {
-	return func(o *clientOptions) { o.maxRetries = new(max(n, 0)) }
+	return func(o *clientOptions) {
+		policy := defaultRetryPolicy()
+		policy.MaxAttempts = max(n, 0) + 1
+		o.retryPolicy = &policy
+	}
+}
+
+// WithRetryPolicy configures retries for replay-safe requests. Unsafe requests
+// are never retried by the default transport policy.
+func WithRetryPolicy(policy RetryPolicy) ClientOption {
+	return func(o *clientOptions) { o.retryPolicy = &policy }
 }
 
 // NewClient returns a synchronous HTTP client for the Mistral API.
@@ -143,99 +114,36 @@ func NewClient(apiKey string, opts ...ClientOption) (*Client, error) {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
+	parsedBaseURL, err := url.Parse(baseURL)
+	if err != nil || parsedBaseURL.Scheme == "" || parsedBaseURL.Host == "" {
+		return nil, fmt.Errorf("%w: invalid base URL %q", ErrInvalidRequest, baseURL)
+	}
 	httpClient := o.httpClient
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 10 * time.Minute}
 	}
-	maxAttempts := defaultMaxAttempts
-	if o.maxRetries != nil {
-		maxAttempts = *o.maxRetries + 1
+	retryPolicy := defaultRetryPolicy()
+	if o.retryPolicy != nil {
+		retryPolicy = *o.retryPolicy
+	}
+	if err := retryPolicy.validate(); err != nil {
+		return nil, err
 	}
 
 	return &Client{
-		apiKey:      apiKey,
-		baseURL:     baseURL,
-		http:        httpClient,
-		maxAttempts: maxAttempts,
+		apiKey:         apiKey,
+		baseURL:        parsedBaseURL,
+		http:           httpClient,
+		retryPolicy:    retryPolicy,
+		userAgentValue: "mistralai-go/" + moduleVersion(),
 	}, nil
-}
-
-// OCR uploads the document via POST /v1/files, then runs POST /v1/ocr on the
-// uploaded file id; the file is deleted afterwards (best effort).
-func (c *Client) OCR(ctx context.Context, req OCRRequest) (OCRResponse, error) {
-	if err := req.validate(); err != nil {
-		return OCRResponse{}, err
-	}
-	resp, err := c.processOCR(ctx, req)
-	if err != nil {
-		return OCRResponse{}, err
-	}
-	return *resp, nil
-}
-
-// UploadFile uploads file bytes (POST /v1/files) and returns the API file id.
-// Purpose defaults to FilePurposeOCR; use FilePurposeBatch for batch inputs.
-func (c *Client) UploadFile(ctx context.Context, req UploadFileRequest) (string, error) {
-	if strings.TrimSpace(req.Filename) == "" {
-		return "", fmt.Errorf("%w: filename is required", ErrInvalidRequest)
-	}
-	if req.Content == nil {
-		return "", fmt.Errorf("%w: content is required", ErrInvalidRequest)
-	}
-	purpose := strings.TrimSpace(req.Purpose)
-	if purpose == "" {
-		purpose = FilePurposeOCR
-	}
-	return c.uploadFile(ctx, req.Filename, req.Content, req.ContentType, purpose)
 }
 
 // DeleteFile removes an uploaded file (DELETE /v1/files/{file_id}).
 func (c *Client) DeleteFile(ctx context.Context, fileID string) error {
-	if strings.TrimSpace(fileID) == "" {
-		return fmt.Errorf("%w: file id is required", ErrInvalidRequest)
-	}
-	return c.doJSON(ctx, http.MethodDelete, "/v1/files/"+url.PathEscape(fileID), nil, nil, nil)
-}
-
-func (r OCRRequest) validate() error {
-	if strings.TrimSpace(r.Filename) == "" {
-		return fmt.Errorf("%w: filename is required", ErrInvalidRequest)
-	}
-	if r.Content == nil {
-		return fmt.Errorf("%w: content is required", ErrInvalidRequest)
-	}
-	return r.options().validate()
-}
-
-func (r OCRRequest) options() OCROptions {
-	return OCROptions{
-		Pages:                    r.Pages,
-		TableFormat:              r.TableFormat,
-		IncludeImageBase64:       r.IncludeImageBase64,
-		ExtractHeader:            r.ExtractHeader,
-		ExtractFooter:            r.ExtractFooter,
-		ID:                       r.ID,
-		DocumentAnnotationPrompt: r.DocumentAnnotationPrompt,
-		DocumentAnnotationFormat: r.DocumentAnnotationFormat,
-	}
-}
-
-func (c *Client) processOCR(ctx context.Context, req OCRRequest) (*OCRResponse, error) {
-	fileID, err := c.uploadFile(ctx, req.Filename, req.Content, req.ContentType, FilePurposeOCR)
+	id, err := pathID("file id", fileID)
 	if err != nil {
-		return nil, fmt.Errorf("mistral: upload file: %w", err)
+		return err
 	}
-	defer func() {
-		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer cancel()
-		_ = c.DeleteFile(cctx, fileID)
-	}()
-
-	body := ocrBody(req.Model, ocrDocument{Type: documentTypeFile, FileID: fileID}, req.options())
-
-	var resp OCRResponse
-	if err = c.postJSON(ctx, "/v1/ocr", body, &resp); err != nil {
-		return nil, fmt.Errorf("mistral: ocr: %w", err)
-	}
-	return &resp, nil
+	return c.doJSON(ctx, http.MethodDelete, pathFiles+"/"+id, nil, nil, nil)
 }

@@ -1,0 +1,11 @@
+{
+  "auto": "auto",
+  "none": "none",
+  "any": "any",
+  "function": {
+    "type": "function",
+    "function": {
+      "name": "lookup"
+    }
+  }
+}

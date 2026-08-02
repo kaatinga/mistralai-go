@@ -1,0 +1,51 @@
+{
+  "chat_completion_request": {
+    "model": "mistral-small-latest",
+    "messages": [
+      {
+        "role": "user",
+        "content": "return JSON"
+      }
+    ],
+    "temperature": 0,
+    "top_p": 0,
+    "random_seed": 42,
+    "parallel_tool_calls": false,
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "answer",
+        "description": "A short answer",
+        "strict": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "answer": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "answer"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  },
+  "ocr_request": {
+    "model": "mistral-ocr-latest",
+    "document": {
+      "type": "file",
+      "file_id": "file-123"
+    },
+    "pages": [
+      0,
+      2
+    ],
+    "table_format": "markdown",
+    "include_image_base64": false,
+    "extract_header": true,
+    "extract_footer": false,
+    "id": "request-123"
+  }
+}

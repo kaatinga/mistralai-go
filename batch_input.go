@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -13,7 +14,7 @@ import (
 // OCREntry, or the generic Entry, then pass them to UploadBatchInput.
 type BatchEntry struct {
 	// CustomID uniquely identifies the entry within the file and is echoed back
-	// on the matching result line (see ParseBatchResults).
+	// on the matching result line (see DecodeBatchResults).
 	CustomID string
 	// Body is the endpoint request payload (e.g. ChatCompletionRequest).
 	Body any
@@ -22,6 +23,70 @@ type BatchEntry struct {
 type batchInputLine struct {
 	CustomID string `json:"custom_id"`
 	Body     any    `json:"body"`
+}
+
+// EncodeBatchEntries writes batch JSONL incrementally. It retains only the set
+// of custom IDs for validation and never materializes the complete file.
+func EncodeBatchEntries(w io.Writer, entries []BatchEntry) error {
+	if w == nil {
+		return fmt.Errorf("%w: output writer is required", ErrInvalidRequest)
+	}
+	if err := validateBatchEntries(entries); err != nil {
+		return err
+	}
+	enc := json.NewEncoder(w)
+	for _, e := range entries {
+		if err := enc.Encode(batchInputLine(e)); err != nil {
+			return fmt.Errorf("mistral: encode batch entry %q: %w", e.CustomID, err)
+		}
+	}
+	return nil
+}
+
+func validateBatchEntries(entries []BatchEntry) error {
+	if len(entries) == 0 {
+		return fmt.Errorf("%w: at least one batch entry is required", ErrInvalidRequest)
+	}
+	seen := make(map[string]struct{}, len(entries))
+	for i, e := range entries {
+		if strings.TrimSpace(e.CustomID) == "" {
+			return fmt.Errorf("%w: batch entry %d: custom_id is required", ErrInvalidRequest, i)
+		}
+		if _, dup := seen[e.CustomID]; dup {
+			return fmt.Errorf("%w: duplicate custom_id %q", ErrInvalidRequest, e.CustomID)
+		}
+		seen[e.CustomID] = struct{}{}
+		if e.Body == nil {
+			return fmt.Errorf("%w: batch entry %q: body is required", ErrInvalidRequest, e.CustomID)
+		}
+	}
+	return nil
+}
+
+type batchJSONLReader struct {
+	entries []BatchEntry
+	index   int
+	buffer  bytes.Buffer
+}
+
+func newBatchJSONLReader(entries []BatchEntry) (*batchJSONLReader, error) {
+	if err := validateBatchEntries(entries); err != nil {
+		return nil, err
+	}
+	return &batchJSONLReader{entries: entries}, nil
+}
+
+func (r *batchJSONLReader) Read(p []byte) (int, error) {
+	for r.buffer.Len() == 0 && r.index < len(r.entries) {
+		if err := json.NewEncoder(&r.buffer).Encode(batchInputLine(r.entries[r.index])); err != nil {
+			return 0, fmt.Errorf("mistral: encode batch entry %q: %w", r.entries[r.index].CustomID, err)
+		}
+		r.index++
+	}
+	if r.buffer.Len() == 0 {
+		return 0, io.EOF
+	}
+	return r.buffer.Read(p)
 }
 
 // Entry builds a batch entry from an arbitrary request body. Use it for
@@ -42,97 +107,28 @@ func EmbeddingEntry(customID string, req EmbeddingRequest) BatchEntry {
 	return BatchEntry{CustomID: customID, Body: req}
 }
 
-// OCREntryOption configures the optional fields of an OCR batch entry body.
-// The With* helpers below cover the common fields; custom options can set any
-// OCROptions field directly.
-type OCREntryOption func(*OCROptions)
-
-// WithOCRPages limits OCR to the given zero-based page indices.
-func WithOCRPages(pages ...int) OCREntryOption {
-	return func(o *OCROptions) { o.Pages = pages }
+// ModerationEntry builds a /v1/moderations batch entry.
+func ModerationEntry(customID string, req ModerationRequest) BatchEntry {
+	return BatchEntry{CustomID: customID, Body: req}
 }
 
-// WithOCRTableFormat sets the table output format ("markdown" or "html").
-func WithOCRTableFormat(format string) OCREntryOption {
-	return func(o *OCROptions) { o.TableFormat = format }
+// ClassificationEntry builds a /v1/classifications batch entry.
+func ClassificationEntry(customID string, req ClassificationRequest) BatchEntry {
+	return BatchEntry{CustomID: customID, Body: req}
 }
 
-// WithOCRImageBase64 requests base64 image payloads in the response.
-func WithOCRImageBase64(include bool) OCREntryOption {
-	return func(o *OCROptions) { o.IncludeImageBase64 = new(include) }
-}
-
-// WithOCRExtractHeader toggles document header extraction.
-func WithOCRExtractHeader(extract bool) OCREntryOption {
-	return func(o *OCROptions) { o.ExtractHeader = new(extract) }
-}
-
-// WithOCRExtractFooter toggles document footer extraction.
-func WithOCRExtractFooter(extract bool) OCREntryOption {
-	return func(o *OCROptions) { o.ExtractFooter = new(extract) }
-}
-
-// WithOCRDocumentAnnotation sets a structured-extraction prompt and its required
-// response format (see JSONSchemaFormat).
-func WithOCRDocumentAnnotation(prompt string, format *ResponseFormat) OCREntryOption {
-	return func(o *OCROptions) {
-		o.DocumentAnnotationPrompt = prompt
-		o.DocumentAnnotationFormat = format
+// OCREntry builds a batch entry using the same typed source and options as
+// synchronous OCR, and validates the request the same way. LocalFile is
+// rejected because a batch entry cannot own an upload lifecycle: upload the
+// file first and reference it with UploadedFile.
+func OCREntry(customID string, req OCRRequest) (BatchEntry, error) {
+	if _, ok := req.Source.(LocalFile); ok {
+		return BatchEntry{}, fmt.Errorf("%w: LocalFile cannot be a batch OCR source; upload it first and use UploadedFile", ErrInvalidRequest)
 	}
-}
-
-func ocrEntryOptions(opts []OCREntryOption) OCROptions {
-	var o OCROptions
-	for _, opt := range opts {
-		opt(&o)
+	if err := req.validate(); err != nil {
+		return BatchEntry{}, err
 	}
-	return o
-}
-
-// OCREntry builds a batch entry for the /v1/ocr endpoint. Unlike the synchronous
-// OCR call, a batch OCR body references a file that has already been uploaded
-// (see UploadFile), so pass its file id rather than raw content. model defaults
-// to DefaultOCRModel when empty.
-func OCREntry(customID, model, fileID string, opts ...OCREntryOption) BatchEntry {
-	doc := ocrDocument{Type: documentTypeFile, FileID: fileID}
-	return BatchEntry{CustomID: customID, Body: ocrBody(model, doc, ocrEntryOptions(opts))}
-}
-
-// OCRURLEntry builds a batch entry for the /v1/ocr endpoint that references a
-// document by URL instead of an uploaded file id. model defaults to
-// DefaultOCRModel when empty.
-func OCRURLEntry(customID, model, documentURL string, opts ...OCREntryOption) BatchEntry {
-	doc := ocrDocument{Type: documentTypeDocumentURL, DocumentURL: documentURL}
-	return BatchEntry{CustomID: customID, Body: ocrBody(model, doc, ocrEntryOptions(opts))}
-}
-
-// BuildBatchInputJSONL serializes entries into newline-delimited JSON (one
-// {"custom_id":...,"body":...} object per line). It validates that there is at
-// least one entry, that every custom id is non-empty and unique, and that no
-// body is nil.
-func BuildBatchInputJSONL(entries []BatchEntry) ([]byte, error) {
-	if len(entries) == 0 {
-		return nil, fmt.Errorf("%w: at least one batch entry is required", ErrInvalidRequest)
-	}
-	seen := make(map[string]struct{}, len(entries))
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf) // Encode appends a newline, yielding valid JSONL
-	for i, e := range entries {
-		if strings.TrimSpace(e.CustomID) == "" {
-			return nil, fmt.Errorf("%w: batch entry %d: custom_id is required", ErrInvalidRequest, i)
-		}
-		if _, dup := seen[e.CustomID]; dup {
-			return nil, fmt.Errorf("%w: duplicate custom_id %q", ErrInvalidRequest, e.CustomID)
-		}
-		seen[e.CustomID] = struct{}{}
-		if e.Body == nil {
-			return nil, fmt.Errorf("%w: batch entry %q: body is required", ErrInvalidRequest, e.CustomID)
-		}
-		if err := enc.Encode(batchInputLine(e)); err != nil {
-			return nil, fmt.Errorf("mistral: encode batch entry %q: %w", e.CustomID, err)
-		}
-	}
-	return buf.Bytes(), nil
+	return BatchEntry{CustomID: customID, Body: ocrBody(req, req.document(""))}, nil
 }
 
 // UploadBatchInput builds a JSONL input file from entries and uploads it with
@@ -141,14 +137,18 @@ func (c *Client) UploadBatchInput(ctx context.Context, filename string, entries 
 	if strings.TrimSpace(filename) == "" {
 		return "", fmt.Errorf("%w: filename is required", ErrInvalidRequest)
 	}
-	jsonl, err := BuildBatchInputJSONL(entries)
+	reader, err := newBatchJSONLReader(entries)
 	if err != nil {
 		return "", err
 	}
-	return c.UploadFile(ctx, UploadFileRequest{
+	file, err := c.UploadFile(ctx, UploadFileRequest{
 		Filename:    filename,
-		Content:     bytes.NewReader(jsonl),
+		Content:     reader,
 		ContentType: "application/jsonl",
 		Purpose:     FilePurposeBatch,
 	})
+	if err != nil {
+		return "", err
+	}
+	return file.ID, nil
 }
