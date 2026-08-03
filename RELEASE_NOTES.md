@@ -1,6 +1,6 @@
-# v1.0.0 release candidate
+# v1.0.0
 
-Date prepared: 2026-08-02
+Release date: 2026-08-03
 
 Contract source: Mistral `platform-docs-public/openapi.yaml` at verified commit
 `6e06c6cfc14e66e45ddf1f06445146314cff5393`.
@@ -56,6 +56,10 @@ A review of the RC found and fixed the following before the tag:
 - **`OCREntry`.** Returned a nil-bodied entry for a `LocalFile` or invalid
   request, surfacing much later as a generic "body is required". It now returns
   `(BatchEntry, error)` and validates like synchronous `OCR`.
+- **Float32 vector helper.** BCM consumer migration exposed that float embeddings
+  could only be decoded as `float64` collections or item-by-item. Added
+  `EmbeddingResponse.Float32Vectors`, with the same dtype and input-index
+  validation as the other collection decoders.
 - Cleanups: the `ocrOptions` clone of `OCRRequest` is gone, the two duplicated
   retry loops share one implementation, request paths are named constants,
   `FIMCompletionStream` reuses `validate`, and batch result bodies decode
@@ -73,7 +77,8 @@ A review of the RC found and fixed the following before the tag:
 | `go list -m -json`, `go list ./...`, `go mod verify` | pass |
 | Package examples | compile in the normal test suite |
 | Fresh temporary copy, without `.git` or workspace state | pass |
-| Bounded live smoke with `MISTRAL_API_KEY` | pass; post-review rerun 2026-08-02 |
+| Bounded live SDK smoke with `MISTRAL_API_KEY` | pass; post-review rerun 2026-08-02 |
+| Bounded live OCR Batch smoke with a synthetic PDF | pass; 2026-08-03; all files cleaned up |
 
 The post-review live smoke covered Models list/get, short Chat, stream
 cancellation, JSON-schema structured output, forced tool once followed by final
@@ -82,18 +87,16 @@ last permitted round, FIM, float and int8 embeddings, and tiny local-file OCR
 with guaranteed cleanup. It used short contexts and did not log keys, prompts,
 documents, or responses.
 
-Large real file transfers and real Batch job creation were not run. They remain
-opt-in because of transfer size/cost. Offline tests cover streaming reader
-errors, multipart filename handling, cleanup failure semantics, a JSONL record
-larger than 16 MiB, record-size-limit enforcement, SSE line/event limits,
-upload error-body limits, and single-attempt unsafe POST behavior.
+Large real file transfers remain opt-in because of transfer size/cost. The
+bounded live Batch smoke used one synthetic one-page PDF and cleaned up its
+input/output files. Offline tests cover streaming reader errors, multipart
+filename handling, cleanup failure semantics, a JSONL record larger than 16 MiB,
+record-size-limit enforcement, SSE line/event limits, upload error-body limits,
+and single-attempt unsafe POST behavior.
 
-## Remaining release gates
+## Post-release consumer follow-up
 
-- Migrate and test `3lines.club` against this candidate through `go.work`.
-- Migrate and test `services/bcm` against this candidate through `go.work`.
-- Build both consumers without local workspace/`replace` directives after an RC
-  version is published.
-- Create and publish tag `v1.0.0` only after those consumer gates pass.
-
-No release tag has been created by this preparation session.
+- Update consumers to `github.com/kaatinga/mistralai-go v1.0.0` and verify their
+  clean, non-workspace builds after the tag is available.
+- The `3lines.club` consumer is not present in this workspace and was not part
+  of this release verification.
