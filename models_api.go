@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"time"
 )
 
@@ -83,9 +84,7 @@ func (c *ModelCapabilities) UnmarshalJSON(data []byte) error {
 
 func (c ModelCapabilities) MarshalJSON() ([]byte, error) {
 	fields := make(map[string]json.RawMessage, len(c.Additional)+len(knownModelCapabilities))
-	for name, value := range c.Additional {
-		fields[name] = value
-	}
+	maps.Copy(fields, c.Additional)
 	known := map[ModelCapability]bool{
 		ModelCapabilityChat: c.CompletionChat, ModelCapabilityFunctionCalling: c.FunctionCalling,
 		ModelCapabilityFIM: c.CompletionFIM, ModelCapabilityFineTuning: c.FineTuning,

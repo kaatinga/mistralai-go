@@ -136,8 +136,8 @@ func (s *ChatCompletionStream) Recv() (ChatCompletionStreamEvent, error) {
 		if strings.HasPrefix(line, ":") {
 			continue
 		}
-		if strings.HasPrefix(line, "data:") {
-			value := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if after, ok := strings.CutPrefix(line, "data:"); ok {
+			value := strings.TrimSpace(after)
 			additional := len(value)
 			if data.Len() > 0 {
 				additional++
