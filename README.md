@@ -16,10 +16,6 @@ go get github.com/kaatinga/mistralai-go@v1.0.0
 
 The module requires Go 1.26.
 
-> **Stable release.** This README documents the released `v1.0.0` API. v1 has no
-> compatibility layer for v0.19.0; see [MIGRATING.md](MIGRATING.md) before
-> upgrading and [RELEASE_NOTES.md](RELEASE_NOTES.md) for the release scope.
-
 ## Client, errors, and retries
 
 ```go
@@ -180,6 +176,3 @@ preserved during JSON round trips and can be queried with `Supports`.
 `Moderate` and `Classify` accept `[]string` inputs, making request/response
 cardinality and Batch encoding explicit. Provider-defined category and target
 names are maps so new server values decode without an SDK release.
-
-See [MIGRATING.md](MIGRATING.md) for v0.19.0 changes and the package examples
-for complete compilable call patterns.
