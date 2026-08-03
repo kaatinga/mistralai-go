@@ -11,16 +11,14 @@ are intentionally outside the v1 scope.
 ## Install
 
 ```bash
-go get github.com/kaatinga/mistralai-go@main
+go get github.com/kaatinga/mistralai-go@v1.0.0
 ```
 
 The module requires Go 1.26.
 
-> **Release candidate.** `v1.0.0` is not tagged yet. The API described here is
-> the intended v1 surface, but it is only frozen once the tag exists. The
-> command above resolves `main` to a commit-based pseudo-version in `go.mod`;
-> pin that version until the release. See `RELEASE_NOTES.md` for the remaining
-> gates.
+> **Stable release.** This README documents the released `v1.0.0` API. v1 has no
+> compatibility layer for v0.19.0; see [MIGRATING.md](MIGRATING.md) before
+> upgrading and [RELEASE_NOTES.md](RELEASE_NOTES.md) for the release scope.
 
 ## Client, errors, and retries
 
