@@ -175,7 +175,7 @@ func (c *Client) retryLoop(ctx context.Context, attempt func() attemptResult) er
 // errorAttempt classifies a non-2xx response. It owns closing resp.Body.
 func errorAttempt(resp *http.Response, retryable bool) attemptResult {
 	body, readErr := readLimited(resp.Body, maxErrorBody)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	var err error
 	if readErr != nil {
 		err = readErr
@@ -210,7 +210,7 @@ func (c *Client) doRetry(ctx context.Context, retryable bool, makeReq func() (*h
 			return errorAttempt(resp, retryable)
 		}
 		payload, err := readLimited(resp.Body, maxJSONResponse)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			return attemptResult{retry: retryable && !errors.Is(err, ErrResponseTooLarge), err: err}
 		}
@@ -379,7 +379,7 @@ func (c *Client) uploadFile(ctx context.Context, filename string, content io.Rea
 		limit = maxErrorBody
 	}
 	body, readErr := readLimited(resp.Body, limit)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	producerErr := <-producerDone
 	if readErr != nil {
 		return File{}, readErr

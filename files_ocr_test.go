@@ -22,7 +22,7 @@ func TestUploadFileMultipartFilename(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		if header.Filename != filename {
 			t.Fatalf("filename = %q", header.Filename)
 		}

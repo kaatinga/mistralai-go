@@ -203,7 +203,7 @@ func TestUploadBatchInput(t *testing.T) {
 			t.Fatal(err)
 		}
 		uploaded, _ = io.ReadAll(f)
-		f.Close()
+		_ = f.Close()
 		if hdr.Filename != "batch.jsonl" {
 			t.Errorf("filename = %q", hdr.Filename)
 		}

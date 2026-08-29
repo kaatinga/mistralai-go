@@ -31,7 +31,7 @@ func TestChatCompletionStream_fragmentedEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	text, last, err := stream.Accumulate()
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestChatCompletionStreamProviderError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	_, err = stream.Recv()
 	var streamErr *StreamError
 	if !errors.As(err, &streamErr) || streamErr.Message != "bad stream" {
@@ -88,7 +88,7 @@ func TestChatCompletionStream_truncatedWithoutDone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	text, _, err := stream.Accumulate()
 	if !errors.Is(err, ErrIncompleteStream) {
@@ -107,7 +107,7 @@ func TestChatCompletionStream_rejectsOversizedEvents(t *testing.T) {
 
 	t.Run("single line", func(t *testing.T) {
 		stream := newStream("data: " + strings.Repeat("x", maxStreamEventBytes) + "\n\n")
-		defer stream.Close()
+		defer func() { _ = stream.Close() }()
 		if _, err := stream.Recv(); !errors.Is(err, ErrResponseTooLarge) {
 			t.Fatalf("err = %v", err)
 		}
@@ -119,7 +119,7 @@ func TestChatCompletionStream_rejectsOversizedEvents(t *testing.T) {
 			"data: " + strings.Repeat("x", half) + "\n" +
 				"data: " + strings.Repeat("y", half) + "\n\n",
 		)
-		defer stream.Close()
+		defer func() { _ = stream.Close() }()
 		if _, err := stream.Recv(); !errors.Is(err, ErrResponseTooLarge) {
 			t.Fatalf("err = %v", err)
 		}

@@ -118,7 +118,7 @@ func TestDownloadFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	data, err := io.ReadAll(body)
 	if err != nil {
 		t.Fatal(err)

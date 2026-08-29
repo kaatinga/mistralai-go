@@ -43,7 +43,7 @@ func TestOCR_uploadAndOCR(t *testing.T) {
 				t.Fatal(err)
 			}
 			uploadedBody, _ = io.ReadAll(f)
-			f.Close()
+			_ = f.Close()
 			if hdr.Filename != "doc.pdf" {
 				t.Errorf("filename = %q", hdr.Filename)
 			}

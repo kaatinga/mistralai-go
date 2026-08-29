@@ -32,7 +32,7 @@ func ExampleClient_ChatCompletionStream() {
 	if err != nil {
 		return
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	for {
 		_, err := stream.Recv()
 		if err == io.EOF {
@@ -61,7 +61,7 @@ func ExampleClient_DownloadFile() {
 	if err != nil {
 		return
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	_, _ = io.Copy(os.Stdout, body)
 }
 

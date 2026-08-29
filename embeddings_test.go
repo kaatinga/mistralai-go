@@ -251,8 +251,7 @@ func TestEmbeddingVectors_validateIndexAndDType(t *testing.T) {
 	if _, err := response.Float64Vectors(); err == nil {
 		t.Fatal("expected dtype mismatch")
 	} else {
-		var typeErr *ErrEmbeddingType
-		if !errors.As(err, &typeErr) {
+		if _, ok := errors.AsType[*ErrEmbeddingType](err); !ok {
 			t.Fatalf("error = %v, want ErrEmbeddingType", err)
 		}
 	}
