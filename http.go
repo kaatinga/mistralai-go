@@ -371,7 +371,7 @@ func (c *Client) uploadFile(ctx context.Context, filename string, content io.Rea
 	resp, err := c.http.Do(req)
 	if err != nil {
 		_ = reader.CloseWithError(err)
-		<-producerDone
+		<-producerDone //nolint:errcheck // the request error wins over the producer's
 		return File{}, err
 	}
 	limit := int64(maxJSONResponse)
